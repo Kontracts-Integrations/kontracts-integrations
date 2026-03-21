@@ -1,0 +1,26 @@
+{
+  "_comment": "Example transformed payload for TRIRIGA record 100001 -> Kontracts lease",
+  "_source_record_id": "TRIRIGA-100001",
+  "_mapping_template": "TRIRIGA Real Estate Lease -> Kontracts Lease",
+
+  "name": "HQ Office Lease - New York",
+  "lease_type": "operating",
+  "commencement_date": "2020-01-01",
+  "expiration_date": "2025-12-31",
+  "monthly_payment": 75000.00,
+  "discount_rate": 0.035,
+  "currency": "USD",
+  "lessor_name": "Empire State Properties LLC",
+  "lessee_name": "Verizon Communications Inc",
+  "leased_area_sqft": 25000.00,
+  "address_line1": "350 Fifth Avenue",
+  "city": "New York",
+  "state": "NY",
+  "postal_code": "10118",
+  "country": "US",
+  "has_renewal_options": true,
+  "renewal_term_months": 60,
+  "has_purchase_option": false,
+  "asset_description": "HQ Office Lease - New York - 350 Fifth Avenue, New York NY",
+  "external_id": "TRIRIGA-100001"
+}

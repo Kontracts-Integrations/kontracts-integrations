@@ -1,0 +1,221 @@
+{
+  "name": "TRIRIGA Real Estate Lease -> Kontracts Lease",
+  "description": "Maps IBM TRIRIGA Real Estate Lease records to Kontracts lease objects for ASC 842 / IFRS 16 accounting",
+  "tririga_module": "triRealEstateLease",
+  "tririga_query_name": "All Active Leases",
+  "kontracts_endpoint": "/api/v1/leases/",
+  "kontracts_method": "POST",
+  "field_mappings": [
+    {
+      "id": "fm_name",
+      "source_field": "triNameTX",
+      "target_field": "name",
+      "transform_type": "direct",
+      "is_required": true,
+      "description": "Lease name copied directly"
+    },
+    {
+      "id": "fm_lease_type",
+      "source_field": "triLeaseTypeCL",
+      "target_field": "lease_type",
+      "transform_type": "lookup_table",
+      "transform_config": {
+        "table": {
+          "Operating": "operating",
+          "Finance": "finance",
+          "Capital": "finance",
+          "Operating Lease": "operating",
+          "Finance Lease": "finance"
+        },
+        "default": "operating"
+      },
+      "is_required": true,
+      "description": "Map TRIRIGA lease type classification to Kontracts enum"
+    },
+    {
+      "id": "fm_commence_date",
+      "source_field": "triCommenceDateDT",
+      "target_field": "commencement_date",
+      "transform_type": "date_format",
+      "transform_config": {
+        "output_format": "%Y-%m-%d"
+      },
+      "is_required": true,
+      "description": "Normalize commencement date to ISO 8601"
+    },
+    {
+      "id": "fm_expiration_date",
+      "source_field": "triExpirationDateDT",
+      "target_field": "expiration_date",
+      "transform_type": "date_format",
+      "transform_config": {
+        "output_format": "%Y-%m-%d"
+      },
+      "is_required": true,
+      "description": "Normalize expiration date to ISO 8601"
+    },
+    {
+      "id": "fm_rent",
+      "source_field": "triBaseRentAmountNU",
+      "target_field": "monthly_payment",
+      "transform_type": "number_convert",
+      "transform_config": {
+        "decimals": 2,
+        "default": 0.0
+      },
+      "is_required": false,
+      "description": "Base rent amount as float with 2 decimal places"
+    },
+    {
+      "id": "fm_discount_rate",
+      "source_field": "triDiscountRateNU",
+      "target_field": "discount_rate",
+      "transform_type": "number_convert",
+      "transform_config": {
+        "divisor": 100,
+        "decimals": 5,
+        "default": 0.0
+      },
+      "is_required": false,
+      "description": "Convert percentage (3.5) to decimal (0.035)"
+    },
+    {
+      "id": "fm_currency",
+      "source_field": "",
+      "target_field": "currency",
+      "transform_type": "constant",
+      "transform_config": {
+        "value": "USD"
+      },
+      "is_required": false,
+      "description": "Always USD for this integration"
+    },
+    {
+      "id": "fm_lessor",
+      "source_field": "triLandlordTX",
+      "target_field": "lessor_name",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "Landlord name -> lessor"
+    },
+    {
+      "id": "fm_lessee",
+      "source_field": "triTenantTX",
+      "target_field": "lessee_name",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "Tenant name -> lessee"
+    },
+    {
+      "id": "fm_area",
+      "source_field": "triLeasedAreaNU",
+      "target_field": "leased_area_sqft",
+      "transform_type": "number_convert",
+      "transform_config": {
+        "decimals": 2
+      },
+      "is_required": false,
+      "description": "Leased area in square feet"
+    },
+    {
+      "id": "fm_address",
+      "source_field": "triAddressTX",
+      "target_field": "address_line1",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "Property street address"
+    },
+    {
+      "id": "fm_city",
+      "source_field": "triCityTX",
+      "target_field": "city",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "City"
+    },
+    {
+      "id": "fm_state",
+      "source_field": "triStateProvinceListTX",
+      "target_field": "state",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "State or province abbreviation"
+    },
+    {
+      "id": "fm_postal",
+      "source_field": "triPostalCodeTX",
+      "target_field": "postal_code",
+      "transform_type": "direct",
+      "is_required": false,
+      "description": "ZIP / postal code"
+    },
+    {
+      "id": "fm_country",
+      "source_field": "triCountryCL",
+      "target_field": "country",
+      "transform_type": "lookup_table",
+      "transform_config": {
+        "table": {
+          "United States": "US",
+          "Canada": "CA",
+          "United Kingdom": "GB",
+          "Germany": "DE",
+          "France": "FR"
+        },
+        "default": "US"
+      },
+      "is_required": false,
+      "description": "Map country name to ISO 3166-1 alpha-2"
+    },
+    {
+      "id": "fm_renewal_options",
+      "source_field": "triRenewalOptionsBL",
+      "target_field": "has_renewal_options",
+      "transform_type": "boolean_convert",
+      "is_required": false,
+      "description": "Convert TRIRIGA boolean to Kontracts boolean"
+    },
+    {
+      "id": "fm_renewal_term",
+      "source_field": "triRenewalTermNU",
+      "target_field": "renewal_term_months",
+      "transform_type": "number_convert",
+      "transform_config": {
+        "as_type": "int",
+        "default": 0
+      },
+      "is_required": false,
+      "description": "Renewal term in months as integer"
+    },
+    {
+      "id": "fm_purchase_option",
+      "source_field": "triPurchaseOptionBL",
+      "target_field": "has_purchase_option",
+      "transform_type": "boolean_convert",
+      "is_required": false,
+      "description": "Whether a purchase option exists"
+    },
+    {
+      "id": "fm_asset_desc",
+      "source_field": "triNameTX",
+      "target_field": "asset_description",
+      "transform_type": "string_template",
+      "transform_config": {
+        "template": "{triNameTX} - {triAddressTX}, {triCityTX} {triStateProvinceListTX}"
+      },
+      "is_required": false,
+      "description": "Compose asset description from multiple fields"
+    },
+    {
+      "id": "fm_external_id",
+      "source_field": "triRecordIdSY",
+      "target_field": "external_id",
+      "transform_type": "string_template",
+      "transform_config": {
+        "template": "TRIRIGA-{triRecordIdSY}"
+      },
+      "is_required": false,
+      "description": "Store TRIRIGA record ID with prefix for cross-reference"
+    }
+  ]
+}
