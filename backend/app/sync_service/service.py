@@ -74,14 +74,14 @@ class SyncService:
         await self._log(
             run_id,
             LogLevel.info,
-            f"Fetching TRIRIGA data: module={template.tririga_module}, "
-            f"query={template.tririga_query_name}",
+            f"Fetching TRIRIGA data: module={template.source_object}, "
+            f"query={template.source_query}",
             "tririga_client",
         )
 
         records = await tririga_client.run_named_query(
-            module_name=template.tririga_module or "",
-            query_name=template.tririga_query_name or "",
+            module_name=template.source_object or "",
+            query_name=template.source_query or "",
             filters={},
             max_records=500,
         )

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class FieldMapping(BaseModel):
     id: str = Field(..., description="Unique ID for this mapping row")
-    source_field: str = Field(..., description="TRIRIGA field name / path")
+    source_field: str = Field(..., description="Source system field name / path")
     target_field: str = Field(..., description="Kontracts field name / path")
     transform_type: str = Field(
         default="direct",
@@ -28,8 +28,8 @@ class MappingTemplateCreate(BaseModel):
     description: Optional[str] = None
     source_connection_id: Optional[int] = None
     target_connection_id: Optional[int] = None
-    tririga_module: Optional[str] = None
-    tririga_query_name: Optional[str] = None
+    source_object: Optional[str] = None
+    source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = Field(default="POST", pattern="^(GET|POST|PUT|PATCH|DELETE)$")
     field_mappings: List[FieldMapping] = Field(default_factory=list)
@@ -40,8 +40,8 @@ class MappingTemplateUpdate(BaseModel):
     description: Optional[str] = None
     source_connection_id: Optional[int] = None
     target_connection_id: Optional[int] = None
-    tririga_module: Optional[str] = None
-    tririga_query_name: Optional[str] = None
+    source_object: Optional[str] = None
+    source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = None
     field_mappings: Optional[List[FieldMapping]] = None
@@ -65,8 +65,8 @@ class MappingTemplateResponse(BaseModel):
     description: Optional[str]
     source_connection_id: Optional[int]
     target_connection_id: Optional[int]
-    tririga_module: Optional[str]
-    tririga_query_name: Optional[str]
+    source_object: Optional[str]
+    source_query: Optional[str]
     kontracts_endpoint: Optional[str]
     kontracts_method: Optional[str]
     is_active: bool

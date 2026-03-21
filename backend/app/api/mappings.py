@@ -60,8 +60,8 @@ def _build_response_with_version(
         description=template.description,
         source_connection_id=template.source_connection_id,
         target_connection_id=template.target_connection_id,
-        tririga_module=template.tririga_module,
-        tririga_query_name=template.tririga_query_name,
+        source_object=template.source_object,
+        source_query=template.source_query,
         kontracts_endpoint=template.kontracts_endpoint,
         kontracts_method=template.kontracts_method,
         is_active=template.is_active,
@@ -112,8 +112,8 @@ async def create_mapping(
         description=payload.description,
         source_connection_id=payload.source_connection_id,
         target_connection_id=payload.target_connection_id,
-        tririga_module=payload.tririga_module,
-        tririga_query_name=payload.tririga_query_name,
+        source_object=payload.source_object,
+        source_query=payload.source_query,
         kontracts_endpoint=payload.kontracts_endpoint,
         kontracts_method=payload.kontracts_method or "POST",
     )
@@ -157,10 +157,10 @@ async def update_mapping(
         template.source_connection_id = payload.source_connection_id
     if payload.target_connection_id is not None:
         template.target_connection_id = payload.target_connection_id
-    if payload.tririga_module is not None:
-        template.tririga_module = payload.tririga_module
-    if payload.tririga_query_name is not None:
-        template.tririga_query_name = payload.tririga_query_name
+    if payload.source_object is not None:
+        template.source_object = payload.source_object
+    if payload.source_query is not None:
+        template.source_query = payload.source_query
     if payload.kontracts_endpoint is not None:
         template.kontracts_endpoint = payload.kontracts_endpoint
     if payload.kontracts_method is not None:

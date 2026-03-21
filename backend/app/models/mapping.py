@@ -26,13 +26,9 @@ class MappingTemplate(Base):
         nullable=True,
     )
 
-    tririga_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    tririga_query_name: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
-    kontracts_endpoint: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
+    source_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source_query: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    kontracts_endpoint: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     kontracts_method: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

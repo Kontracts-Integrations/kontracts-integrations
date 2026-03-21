@@ -2,7 +2,8 @@
 // Connection types
 // ──────────────────────────────────────────────
 
-export type ConnectionType = "tririga" | "kontracts";
+export type SourceSystemType = "tririga" | "sap_re" | "planon" | "costar" | "servicenow_wsd";
+export type ConnectionType = SourceSystemType | "kontracts";
 
 export interface Connection {
   id: number;
@@ -76,8 +77,8 @@ export interface MappingTemplate {
   description: string | null;
   source_connection_id: number | null;
   target_connection_id: number | null;
-  tririga_module: string | null;
-  tririga_query_name: string | null;
+  source_object: string | null;
+  source_query: string | null;
   kontracts_endpoint: string | null;
   kontracts_method: string | null;
   is_active: boolean;
@@ -91,8 +92,8 @@ export interface MappingTemplateCreate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
-  tririga_module?: string;
-  tririga_query_name?: string;
+  source_object?: string;
+  source_query?: string;
   kontracts_endpoint?: string;
   kontracts_method?: string;
   field_mappings: FieldMapping[];
@@ -103,8 +104,8 @@ export interface MappingTemplateUpdate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
-  tririga_module?: string;
-  tririga_query_name?: string;
+  source_object?: string;
+  source_query?: string;
   kontracts_endpoint?: string;
   kontracts_method?: string;
   field_mappings?: FieldMapping[];
@@ -167,16 +168,16 @@ export interface LogEntry {
 }
 
 // ──────────────────────────────────────────────
-// TRIRIGA types
+// Source system types
 // ──────────────────────────────────────────────
 
-export interface TririgaModule {
+export interface SourceObject {
   name: string;
   label: string;
   category?: string;
 }
 
-export interface TririgaField {
+export interface SourceField {
   name: string;
   label: string;
   type: string;
@@ -184,11 +185,23 @@ export interface TririgaField {
   read_only?: boolean;
 }
 
+// Backwards-compatible aliases
+export type TririgaModule = SourceObject;
+export type TririgaField = SourceField;
+
 export interface TririgaOperation {
   name: string;
   category: string;
   description: string;
 }
+
+export const SOURCE_SYSTEM_LABELS: Record<SourceSystemType, string> = {
+  tririga: "IBM TRIRIGA",
+  sap_re: "SAP RE-FX",
+  planon: "Planon",
+  costar: "CoStar",
+  servicenow_wsd: "ServiceNow WSD",
+};
 
 // ──────────────────────────────────────────────
 // Kontracts types

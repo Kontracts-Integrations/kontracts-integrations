@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { tririgaApi, kontractsApi, connectionsApi, mappingsApi } from "@/lib/api";
+import { sourceApi, kontractsApi, connectionsApi, mappingsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId } from "@/lib/utils";
 import { Plus, Save, Loader2 } from "lucide-react";
-import type { FieldMapping, MappingTemplate, TririgaField, KontractsField } from "@/types";
+import type { FieldMapping, MappingTemplate, SourceField, KontractsField } from "@/types";
 
 interface Props {
   template: MappingTemplate;
@@ -21,8 +21,8 @@ interface Props {
     updates: {
       name: string;
       description?: string;
-      tririga_module?: string;
-      tririga_query_name?: string;
+      source_object?: string;
+      source_query?: string;
       kontracts_endpoint?: string;
       kontracts_method?: string;
       field_mappings: FieldMapping[];
@@ -36,8 +36,8 @@ interface Props {
 export function MappingBuilder({ template, onSave, saving }: Props) {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? "");
-  const [tririgaModule, setTririgaModule] = useState(template.tririga_module ?? "");
-  const [tririgaQuery, setTririgaQuery] = useState(template.tririga_query_name ?? "");
+  const [sourceObject, setSourceObject] = useState(template.source_object ?? "");
+  const [sourceQuery, setSourceQuery] = useState(template.source_query ?? "");
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
   const [sourceConnId, setSourceConnId] = useState<number | undefined>(
@@ -55,8 +55,8 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
   useEffect(() => {
     setName(template.name);
     setDescription(template.description ?? "");
-    setTririgaModule(template.tririga_module ?? "");
-    setTririgaQuery(template.tririga_query_name ?? "");
+    setSourceObject(template.source_object ?? "");
+    setSourceQuery(template.source_query ?? "");
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
     setKontractsMethod(template.kontracts_method ?? "POST");
     setSourceConnId(template.source_connection_id ?? undefined);
@@ -71,14 +71,14 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     queryFn: () => connectionsApi.list(),
   });
 
-  const tririgaConns = connections?.filter((c) => c.connection_type === "tririga") ?? [];
+  const sourceConns = connections?.filter((c) => c.connection_type !== "kontracts") ?? [];
   const kontractsConns = connections?.filter((c) => c.connection_type === "kontracts") ?? [];
 
-  // TRIRIGA fields
-  const { data: sourceFields = [], isLoading: sourceLoading } = useQuery<TririgaField[]>({
-    queryKey: ["tririga-fields", tririgaModule, sourceConnId],
-    queryFn: () => tririgaApi.getFields(tririgaModule, sourceConnId),
-    enabled: !!tririgaModule,
+  // Source fields
+  const { data: sourceFields = [], isLoading: sourceLoading } = useQuery<SourceField[]>({
+    queryKey: ["source-fields", sourceObject, sourceConnId],
+    queryFn: () => sourceApi.getFields(sourceObject, sourceConnId),
+    enabled: !!sourceObject,
   });
 
   // Kontracts fields
@@ -88,10 +88,10 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     enabled: !!kontractsEndpoint,
   });
 
-  // TRIRIGA modules
-  const { data: modules = [] } = useQuery({
-    queryKey: ["tririga-modules", sourceConnId],
-    queryFn: () => tririgaApi.getModules(sourceConnId),
+  // Source objects
+  const { data: objects = [] } = useQuery({
+    queryKey: ["source-objects", sourceConnId],
+    queryFn: () => sourceApi.getObjects(sourceConnId),
   });
 
   // Kontracts endpoints
@@ -100,11 +100,11 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     queryFn: () => kontractsApi.getEndpoints(targetConnId),
   });
 
-  // Preview data (source records from TRIRIGA)
+  // Preview data (source records)
   const { data: previewData } = useQuery({
-    queryKey: ["tririga-preview", tririgaModule, tririgaQuery, sourceConnId],
-    queryFn: () => tririgaApi.preview(tririgaModule, tririgaQuery, sourceConnId),
-    enabled: !!tririgaModule && !!tririgaQuery,
+    queryKey: ["source-preview", sourceObject, sourceQuery, sourceConnId],
+    queryFn: () => sourceApi.preview(sourceObject, sourceQuery, sourceConnId),
+    enabled: !!sourceObject && !!sourceQuery,
   });
 
   // Mapped preview — apply current field mappings to source records via the backend engine
@@ -145,8 +145,8 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     onSave({
       name,
       description: description || undefined,
-      tririga_module: tririgaModule || undefined,
-      tririga_query_name: tririgaQuery || undefined,
+      source_object: sourceObject || undefined,
+      source_query: sourceQuery || undefined,
       kontracts_endpoint: kontractsEndpoint || undefined,
       kontracts_method: kontractsMethod,
       field_mappings: mappings,
@@ -169,7 +169,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
         </div>
 
         <div className="space-y-1">
-          <Label className="text-xs">TRIRIGA Connection</Label>
+          <Label className="text-xs">Source Connection</Label>
           <Select
             value={sourceConnId ? String(sourceConnId) : "__default__"}
             onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
@@ -179,7 +179,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__default__">Default (from env)</SelectItem>
-              {tririgaConns.map((c) => (
+              {sourceConns.map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>
                   {c.name}
                 </SelectItem>
@@ -209,13 +209,13 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
         </div>
 
         <div className="space-y-1">
-          <Label className="text-xs">TRIRIGA Module</Label>
-          <Select value={tririgaModule} onValueChange={setTririgaModule}>
+          <Label className="text-xs">Source Object</Label>
+          <Select value={sourceObject} onValueChange={setSourceObject}>
             <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Select module..." />
+              <SelectValue placeholder="Select object..." />
             </SelectTrigger>
             <SelectContent>
-              {modules.map((m) => (
+              {objects.map((m) => (
                 <SelectItem key={m.name} value={m.name}>
                   {m.label ?? m.name}
                 </SelectItem>
@@ -225,12 +225,12 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
         </div>
 
         <div className="space-y-1">
-          <Label className="text-xs">TRIRIGA Query Name</Label>
+          <Label className="text-xs">Source Query / View</Label>
           <Input
             className="h-8 text-xs"
             placeholder="All Active Leases"
-            value={tririgaQuery}
-            onChange={(e) => setTririgaQuery(e.target.value)}
+            value={sourceQuery}
+            onChange={(e) => setSourceQuery(e.target.value)}
           />
         </div>
 
@@ -320,7 +320,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
         <TabsContent value="fields" className="mt-4 flex-1 overflow-hidden">
           <div className="grid h-[500px] grid-cols-2 gap-4">
             <FieldPanel
-              title="TRIRIGA Fields"
+              title="Source Fields"
               fields={sourceFields}
               loading={sourceLoading}
               side="source"
@@ -343,7 +343,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
             />
           ) : (
             <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
-              Select a TRIRIGA module and query name to load preview data.
+              Select a source object and query name to load preview data.
             </div>
           )}
         </TabsContent>

@@ -35,7 +35,7 @@ export function TririgaConnectionForm({ existing, onSuccess }: Props) {
   } = useForm<FormValues>({
     defaultValues: {
       name: existing?.name ?? "TRIRIGA Production",
-      base_url: existing?.base_url ?? "https://verizon.tririga.com",
+      base_url: existing?.base_url ?? "https://your-instance.tririga.com",
       username: "",
       password: "",
       wsdl_path: "/ws/TririgaWS?wsdl",
@@ -96,7 +96,7 @@ export function TririgaConnectionForm({ existing, onSuccess }: Props) {
         <Label htmlFor="tririga-url">Base URL</Label>
         <Input
           id="tririga-url"
-          placeholder="https://verizon.tririga.com"
+          placeholder="https://your-instance.tririga.com"
           {...register("base_url", { required: "Base URL is required" })}
         />
         <p className="text-xs text-muted-foreground">

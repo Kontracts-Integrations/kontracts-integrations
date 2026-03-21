@@ -9,7 +9,13 @@ from app.database import Base
 
 
 class ConnectionType(str, enum.Enum):
+    # Source systems (IWMS)
     tririga = "tririga"
+    sap_re = "sap_re"
+    planon = "planon"
+    costar = "costar"
+    servicenow_wsd = "servicenow_wsd"
+    # Target system
     kontracts = "kontracts"
 
 

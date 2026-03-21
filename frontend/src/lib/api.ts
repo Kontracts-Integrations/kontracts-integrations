@@ -12,6 +12,8 @@ import type {
   SyncRun,
   SyncRunDetail,
   LogEntry,
+  SourceObject,
+  SourceField,
   TririgaModule,
   TririgaField,
   KontractsEndpoint,
@@ -111,6 +113,37 @@ export const tririgaApi = {
     const r = await http.post("/tririga/preview", {
       connection_id: connectionId,
       module_name: moduleName,
+      query_name: queryName,
+      max_records: 5,
+    });
+    return r.data;
+  },
+};
+
+// ──────────────────────────────────────────────
+// Source (generic multi-source API)
+// ──────────────────────────────────────────────
+
+export const sourceApi = {
+  getObjects: async (connectionId?: number): Promise<SourceObject[]> => {
+    const params = connectionId ? { connection_id: connectionId } : {};
+    const r = await http.get<{ objects: SourceObject[] }>("/source/objects", { params });
+    return r.data.objects;
+  },
+  getFields: async (objectName: string, connectionId?: number): Promise<SourceField[]> => {
+    const params: Record<string, unknown> = { object_name: objectName };
+    if (connectionId) params.connection_id = connectionId;
+    const r = await http.get<{ fields: SourceField[] }>("/source/fields", { params });
+    return r.data.fields;
+  },
+  preview: async (
+    objectName: string,
+    queryName: string,
+    connectionId?: number
+  ): Promise<{ records: Record<string, unknown>[]; fields: SourceField[]; count: number }> => {
+    const r = await http.post("/source/preview", {
+      connection_id: connectionId,
+      object_name: objectName,
       query_name: queryName,
       max_records: 5,
     });

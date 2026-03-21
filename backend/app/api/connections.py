@@ -153,4 +153,20 @@ async def _test_connection_by_type(
         ok, msg, details = await client.test_connection()
         return ConnectionTestResult(success=ok, message=msg, details=details)
 
+    elif conn.connection_type in {
+        ConnectionType.sap_re,
+        ConnectionType.planon,
+        ConnectionType.costar,
+        ConnectionType.servicenow_wsd,
+    }:
+        from app.source_connectors.factory import build_source_connector
+
+        connector = build_source_connector(
+            connection_type=conn.connection_type,
+            base_url=conn.base_url or "",
+            credentials=credentials,
+        )
+        ok, msg, details = await connector.test_connection()
+        return ConnectionTestResult(success=ok, message=msg, details=details)
+
     return ConnectionTestResult(success=False, message="Unknown connection type")

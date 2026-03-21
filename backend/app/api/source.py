@@ -1,0 +1,118 @@
+import logging
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.database import get_db
+from app.models.connection import Connection, ConnectionType
+from app.source_connectors.factory import build_source_connector
+from app.utils.crypto import decrypt_credentials
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+SOURCE_TYPES = {
+    ConnectionType.tririga,
+    ConnectionType.sap_re,
+    ConnectionType.planon,
+    ConnectionType.costar,
+    ConnectionType.servicenow_wsd,
+}
+
+
+async def _get_connector(connection_id: Optional[int], db: AsyncSession):
+    """Resolve the source connector from a connection_id (or fall back to env TRIRIGA)."""
+    if connection_id:
+        result = await db.execute(
+            select(Connection).where(Connection.id == connection_id)
+        )
+        conn = result.scalar_one_or_none()
+        if not conn:
+            raise HTTPException(status_code=404, detail="Source connection not found")
+        if conn.connection_type not in SOURCE_TYPES:
+            raise HTTPException(status_code=400, detail=f"Connection {conn.id} is not a source system connection")
+        creds = decrypt_credentials(conn.encrypted_credentials)
+        return build_source_connector(
+            connection_type=conn.connection_type,
+            base_url=conn.base_url or "",
+            credentials=creds,
+            demo_mode=settings.demo_mode,
+        )
+
+    # No connection_id — fall back to env-based TRIRIGA
+    from app.tririga_client.client import TririgaClient
+    from app.source_connectors.tririga import TririgaSourceConnector
+    client = TririgaClient(
+        base_url=settings.tririga_url,
+        username=settings.tririga_username or "",
+        password=settings.tririga_password or "",
+        wsdl_path=settings.tririga_wsdl_path,
+        demo_mode=settings.demo_mode,
+    )
+    return TririgaSourceConnector(client)
+
+
+@router.get("/objects")
+async def get_objects(
+    connection_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(connection_id, db)
+    try:
+        objects = await connector.get_objects()
+        return {"objects": objects}
+    except Exception as e:
+        logger.error(f"get_objects failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
+
+
+@router.get("/fields")
+async def get_fields(
+    object_name: str = Query(...),
+    connection_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(connection_id, db)
+    try:
+        fields = await connector.get_object_fields(object_name)
+        return {"object": object_name, "fields": fields}
+    except Exception as e:
+        logger.error(f"get_fields failed for {object_name}: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
+
+
+class PreviewRequest(BaseModel):
+    connection_id: Optional[int] = None
+    object_name: str
+    query_name: str
+    max_records: int = 5
+
+
+@router.post("/preview")
+async def preview_data(
+    payload: PreviewRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(payload.connection_id, db)
+    try:
+        records = await connector.run_query(
+            object_name=payload.object_name,
+            query_name=payload.query_name,
+            filters={},
+            max_records=payload.max_records,
+        )
+        fields = await connector.get_object_fields(payload.object_name)
+        return {
+            "records": records,
+            "count": len(records),
+            "fields": fields,
+            "object": payload.object_name,
+            "query": payload.query_name,
+        }
+    except Exception as e:
+        logger.error(f"preview_data failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
