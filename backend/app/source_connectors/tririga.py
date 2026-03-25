@@ -1,5 +1,5 @@
 """TRIRIGA source connector — wraps the existing TririgaClient."""
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple  # noqa: F401
 
 from app.source_connectors.base import SourceConnector
 
@@ -14,8 +14,16 @@ class TririgaSourceConnector(SourceConnector):
     async def get_objects(self) -> List[Dict[str, Any]]:
         return await self._client.get_modules()
 
-    async def get_object_fields(self, object_name: str) -> List[Dict[str, Any]]:
-        return await self._client.get_module_fields(object_name)
+    async def get_business_objects(self, module_name: str) -> List[Dict[str, Any]]:
+        return await self._client.get_business_objects(module_name)
+
+    async def get_object_fields(
+        self, object_name: str, module_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        return await self._client.get_module_fields(
+            module_name=module_name or object_name,
+            object_type_name=object_name,
+        )
 
     async def run_query(
         self,

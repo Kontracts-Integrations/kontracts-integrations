@@ -77,6 +77,7 @@ export interface MappingTemplate {
   description: string | null;
   source_connection_id: number | null;
   target_connection_id: number | null;
+  source_module: string | null;
   source_object: string | null;
   source_query: string | null;
   kontracts_endpoint: string | null;
@@ -92,6 +93,7 @@ export interface MappingTemplateCreate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
+  source_module?: string;
   source_object?: string;
   source_query?: string;
   kontracts_endpoint?: string;
@@ -104,6 +106,7 @@ export interface MappingTemplateUpdate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
+  source_module?: string;
   source_object?: string;
   source_query?: string;
   kontracts_endpoint?: string;

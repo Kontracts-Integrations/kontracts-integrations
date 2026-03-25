@@ -23,6 +23,7 @@ interface Props {
   mapping: FieldMapping;
   sourceFields: TririgaField[];
   targetFields: KontractsField[];
+  sourceLoading?: boolean;
   onChange: (updated: FieldMapping) => void;
   onDelete: () => void;
   index: number;
@@ -32,6 +33,7 @@ export function MappingRow({
   mapping,
   sourceFields,
   targetFields,
+  sourceLoading,
   onChange,
   onDelete,
   index,
@@ -58,18 +60,27 @@ export function MappingRow({
           <Select
             value={mapping.source_field || "__none__"}
             onValueChange={(v) => update({ source_field: v === "__none__" ? "" : v })}
+            disabled={sourceLoading}
           >
             <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Source field..." />
+              <SelectValue placeholder={sourceLoading ? "Loading fields..." : "Source field..."} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__">— none —</SelectItem>
-              {sourceFields.map((f) => (
-                <SelectItem key={f.name} value={f.name}>
-                  <span className="font-mono">{f.name}</span>
-                  <span className="ml-2 text-muted-foreground">({f.type})</span>
-                </SelectItem>
-              ))}
+              {sourceLoading ? (
+                <div className="py-2 text-center text-xs text-muted-foreground">Loading fields...</div>
+              ) : sourceFields.length === 0 ? (
+                <div className="py-2 text-center text-xs text-muted-foreground">No fields — select a Business Object above</div>
+              ) : (
+                <>
+                  <SelectItem value="__none__">— none —</SelectItem>
+                  {sourceFields.map((f) => (
+                    <SelectItem key={f.name} value={f.name}>
+                      <span className="font-mono">{f.name}</span>
+                      <span className="ml-2 text-muted-foreground">({f.type})</span>
+                    </SelectItem>
+                  ))}
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>

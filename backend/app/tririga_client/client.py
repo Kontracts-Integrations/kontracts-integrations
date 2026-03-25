@@ -10,6 +10,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Module-level zeep client cache keyed by (base_url, username)
+# Avoids re-downloading the WSDL on every request
+_zeep_client_cache: Dict[Tuple[str, str], Any] = {}
+
 
 class TririgaClient:
     def __init__(
@@ -31,22 +35,59 @@ class TririgaClient:
         return f"{self.base_url}{self.wsdl_path}"
 
     def _get_zeep_client(self):
-        if self._zeep_client is None:
+        cache_key = (self.base_url, self.username)
+        if cache_key not in _zeep_client_cache:
             try:
                 from zeep import Client
                 from zeep.transports import Transport
                 import requests
+                import ssl
+                from requests.adapters import HTTPAdapter
+                from urllib3.util.ssl_ import create_urllib3_context
 
                 session = requests.Session()
                 session.auth = (self.username, self.password)
+                if "techzone.ibm.com" in self.base_url or "https" in self.base_url:
+                    import urllib3
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+                    # OpenSSL 3.x has SECLEVEL=1+ by default which blocks some IBM server
+                    # cipher suites with a record-layer failure. Drop to SECLEVEL=0 to allow all.
+                    class _LaxSSLAdapter(HTTPAdapter):
+                        def init_poolmanager(self, *args, **kwargs):
+                            ctx = create_urllib3_context()
+                            ctx.check_hostname = False
+                            ctx.verify_mode = ssl.CERT_NONE
+                            try:
+                                ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+                            except ssl.SSLError:
+                                pass
+                            kwargs["ssl_context"] = ctx
+                            super().init_poolmanager(*args, **kwargs)
+
+                        def proxy_manager_for(self, proxy, **proxy_kwargs):
+                            ctx = create_urllib3_context()
+                            ctx.check_hostname = False
+                            ctx.verify_mode = ssl.CERT_NONE
+                            try:
+                                ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+                            except ssl.SSLError:
+                                pass
+                            proxy_kwargs["ssl_context"] = ctx
+                            return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+                    session.mount("https://", _LaxSSLAdapter())
+                    session.verify = False
+
                 transport = Transport(session=session, timeout=30)
-                self._zeep_client = Client(
+                _zeep_client_cache[cache_key] = Client(
                     wsdl=self._get_wsdl_url(), transport=transport
                 )
+                logger.info(f"Initialized zeep client for {self.base_url}")
             except Exception as e:
                 logger.error(f"Failed to initialize zeep client: {e}")
                 raise
-        return self._zeep_client
+        return _zeep_client_cache[cache_key]
 
     async def test_connection(self) -> Tuple[bool, str, Optional[Dict]]:
         if self.demo_mode:
@@ -62,6 +103,8 @@ class TririgaClient:
             )
             from app.tririga_client.normalizer import normalize_soap_response
             details = normalize_soap_response(info)
+            if not isinstance(details, dict):
+                details = {"result": details}
             return True, "Connection successful", details
         except Exception as e:
             logger.warning(f"TRIRIGA connection test failed: {e}")
@@ -77,9 +120,7 @@ class TririgaClient:
             client = await loop.run_in_executor(None, self._get_zeep_client)
             result = await loop.run_in_executor(
                 None,
-                lambda: client.service.getModules(
-                    username=self.username, password=self.password
-                ),
+                lambda: client.service.getModules(),
             )
             from app.tririga_client.normalizer import normalize_soap_response
             normalized = normalize_soap_response(result)
@@ -90,27 +131,72 @@ class TririgaClient:
             logger.error(f"getModules failed: {e}")
             raise
 
-    async def get_module_fields(self, module_name: str) -> List[Dict[str, Any]]:
+    async def get_business_objects(
+        self, module_name: str, is_stand_alone: bool = True
+    ) -> List[Dict[str, Any]]:
         if self.demo_mode:
-            from app.tririga_client.fixtures import get_demo_fields
-            return get_demo_fields(module_name)
+            from app.tririga_client.fixtures import get_demo_business_objects
+            return get_demo_business_objects(module_name)
 
         loop = asyncio.get_event_loop()
         try:
             client = await loop.run_in_executor(None, self._get_zeep_client)
             result = await loop.run_in_executor(
                 None,
-                lambda: client.service.getObjectTypeByName(
-                    username=self.username,
-                    password=self.password,
+                lambda: client.service.getObjectTypeListByModuleName(
                     moduleName=module_name,
+                    isStandAlone=is_stand_alone,
+                ),
+            )
+            from app.tririga_client.normalizer import normalize_soap_response
+            normalized = normalize_soap_response(result)
+            items = []
+            if isinstance(normalized, list):
+                items = normalized
+            elif isinstance(normalized, dict):
+                for key in ("out", "BaseObjectType", "item", "result"):
+                    if key in normalized:
+                        val = normalized[key]
+                        items = val if isinstance(val, list) else [val]
+                        break
+                if not items:
+                    items = [normalized]
+            return [
+                {
+                    "name": str(item.get("name", item)) if isinstance(item, dict) else str(item),
+                    "label": str(item.get("name", item)) if isinstance(item, dict) else str(item),
+                    "id": item.get("id") if isinstance(item, dict) else None,
+                }
+                for item in items
+                if item
+            ]
+        except Exception as e:
+            logger.error(f"getObjectTypeListByModuleName failed for {module_name}: {e}")
+            raise
+
+    async def get_module_fields(
+        self, module_name: str, object_type_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        if self.demo_mode:
+            from app.tririga_client.fixtures import get_demo_fields
+            return get_demo_fields(object_type_name or module_name)
+
+        object_type_name = object_type_name or module_name
+        loop = asyncio.get_event_loop()
+        try:
+            client = await loop.run_in_executor(None, self._get_zeep_client)
+            result = await loop.run_in_executor(
+                None,
+                lambda: client.service.getObjectTypeByName(
+                    moduleName=module_name,
+                    objectTypeName=object_type_name,
                 ),
             )
             from app.tririga_client.normalizer import normalize_soap_response, extract_fields
             normalized = normalize_soap_response(result)
             return extract_fields(normalized)
         except Exception as e:
-            logger.error(f"getObjectTypeByName failed for {module_name}: {e}")
+            logger.error(f"getObjectTypeByName failed for {module_name}/{object_type_name}: {e}")
             raise
 
     async def run_named_query(
@@ -139,8 +225,6 @@ class TririgaClient:
             result = await loop.run_in_executor(
                 None,
                 lambda: client.service.runNamedQuery(
-                    username=self.username,
-                    password=self.password,
                     moduleName=module_name,
                     queryName=query_name,
                     filterCondition=filter_str,
@@ -165,8 +249,6 @@ class TririgaClient:
             result = await loop.run_in_executor(
                 None,
                 lambda: client.service.getRecordDataHeaders(
-                    username=self.username,
-                    password=self.password,
                     specId=spec_id,
                     recordId=record_id,
                 ),
@@ -187,8 +269,6 @@ class TririgaClient:
             result = await loop.run_in_executor(
                 None,
                 lambda: client.service.saveRecord(
-                    username=self.username,
-                    password=self.password,
                     tririgaWS=record_data,
                 ),
             )

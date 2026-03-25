@@ -130,9 +130,16 @@ export const sourceApi = {
     const r = await http.get<{ objects: SourceObject[] }>("/source/objects", { params });
     return r.data.objects;
   },
-  getFields: async (objectName: string, connectionId?: number): Promise<SourceField[]> => {
+  getBusinessObjects: async (moduleName: string, connectionId?: number): Promise<SourceObject[]> => {
+    const params: Record<string, unknown> = { module_name: moduleName };
+    if (connectionId) params.connection_id = connectionId;
+    const r = await http.get<{ business_objects: SourceObject[] }>("/source/business-objects", { params });
+    return r.data.business_objects;
+  },
+  getFields: async (objectName: string, connectionId?: number, moduleName?: string): Promise<SourceField[]> => {
     const params: Record<string, unknown> = { object_name: objectName };
     if (connectionId) params.connection_id = connectionId;
+    if (moduleName) params.module_name = moduleName;
     const r = await http.get<{ fields: SourceField[] }>("/source/fields", { params });
     return r.data.fields;
   },

@@ -26,6 +26,7 @@ class MappingTemplate(Base):
         nullable=True,
     )
 
+    source_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_query: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     kontracts_endpoint: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -60,6 +61,7 @@ class MappingTemplate(Base):
         back_populates="template",
         lazy="select",
         uselist=True,
+        cascade="all, delete-orphan",
     )
     sync_runs: Mapped[list] = relationship(
         "SyncRun",

@@ -68,11 +68,9 @@ export default function MappingDetailPage() {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/mappings">
               <ArrowLeft className="mr-1 h-4 w-4" />
-              All Mappings
+              Back
             </Link>
           </Button>
-          <span className="text-muted-foreground">/</span>
-          <span className="text-sm font-medium">{template.name}</span>
         </div>
 
         <MappingBuilder

@@ -58,7 +58,10 @@ class KontractsClient:
         if self._access_token and time.time() < self._token_expires_at - 60:
             return self._access_token
 
-        token_url = f"https://{self.auth0_domain}/oauth/token"
+        if not self.auth0_domain:
+            raise ValueError("Auth0 domain is not configured. Please update the connection with a valid Auth0 domain.")
+        domain = self.auth0_domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+        token_url = f"https://{domain}/oauth/token"
         payload = {
             "grant_type": "client_credentials",
             "client_id": self.client_id,

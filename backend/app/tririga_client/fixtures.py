@@ -158,6 +158,39 @@ DEMO_WSDL_STRUCTURE = {
 }
 
 
+DEMO_BUSINESS_OBJECTS_BY_MODULE: Dict[str, List[Dict[str, Any]]] = {
+    "triRealEstateLease": [
+        {"name": "triRealEstateLease", "label": "Real Estate Lease", "id": 1001},
+        {"name": "triRealEstateLeaseArmLength", "label": "Arm Length Lease", "id": 1002},
+        {"name": "triRealEstateLeaseAbstract", "label": "Lease Abstract", "id": 1003},
+    ],
+    "triBuilding": [
+        {"name": "triBuilding", "label": "Building", "id": 2001},
+        {"name": "triBuildingFloor", "label": "Building Floor", "id": 2002},
+    ],
+    "triContract": [
+        {"name": "triContract", "label": "Contract", "id": 3001},
+        {"name": "triContractRevision", "label": "Contract Revision", "id": 3002},
+    ],
+    "triPeople": [
+        {"name": "triPeople", "label": "People", "id": 4001},
+        {"name": "triEmployee", "label": "Employee", "id": 4002},
+    ],
+    "triWorkTask": [
+        {"name": "triWorkTask", "label": "Work Task", "id": 5001},
+        {"name": "triWorkOrder", "label": "Work Order", "id": 5002},
+    ],
+}
+
+
+def get_demo_business_objects(module_name: str) -> List[Dict[str, Any]]:
+    # Fall back to a single entry matching the module name if not found
+    return DEMO_BUSINESS_OBJECTS_BY_MODULE.get(
+        module_name,
+        [{"name": module_name, "label": module_name, "id": None}],
+    )
+
+
 def get_demo_fields(module_name: str):
     return DEMO_FIELDS_BY_MODULE.get(
         module_name,

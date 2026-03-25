@@ -218,7 +218,7 @@ export default function ConnectionsPage() {
             ) : null}
             <Card>
               <CardHeader>
-                <CardTitle>{kontractsConns.length > 0 ? "Add Another Kontracts Connection" : "Configure Kontracts Connection"}</CardTitle>
+                <CardTitle>Configure Kontracts Connection</CardTitle>
                 <CardDescription>Connect to the Kontracts REST API using Auth0 client credentials OAuth2 flow.</CardDescription>
               </CardHeader>
               <CardContent><KontractsConnectionForm /></CardContent>

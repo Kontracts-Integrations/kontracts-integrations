@@ -28,6 +28,7 @@ class MappingTemplateCreate(BaseModel):
     description: Optional[str] = None
     source_connection_id: Optional[int] = None
     target_connection_id: Optional[int] = None
+    source_module: Optional[str] = None
     source_object: Optional[str] = None
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
@@ -40,6 +41,7 @@ class MappingTemplateUpdate(BaseModel):
     description: Optional[str] = None
     source_connection_id: Optional[int] = None
     target_connection_id: Optional[int] = None
+    source_module: Optional[str] = None
     source_object: Optional[str] = None
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
@@ -65,6 +67,7 @@ class MappingTemplateResponse(BaseModel):
     description: Optional[str]
     source_connection_id: Optional[int]
     target_connection_id: Optional[int]
+    source_module: Optional[str]
     source_object: Optional[str]
     source_query: Optional[str]
     kontracts_endpoint: Optional[str]

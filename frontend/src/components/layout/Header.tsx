@@ -62,11 +62,10 @@ export function Header({ title }: { title?: string }) {
 
   const cycleTheme = () => {
     if (theme === "light") setTheme("dark");
-    else if (theme === "dark") setTheme("system");
     else setTheme("light");
   };
 
-  const ThemeIcon = !mounted ? Monitor : theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
+  const ThemeIcon = !mounted ? Sun : theme === "light" ? Sun : Moon;
 
   return (
     <header className="flex h-16 items-center justify-between border-b bg-card px-6">

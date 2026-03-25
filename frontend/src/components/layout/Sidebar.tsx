@@ -25,7 +25,7 @@ const navItems = [
     icon: Plug,
   },
   {
-    label: "Mappings",
+    label: "Mapping Templates",
     href: "/mappings",
     icon: GitBranch,
   },
@@ -50,8 +50,7 @@ export function Sidebar() {
       <div className="flex h-16 items-center gap-2 border-b px-6">
         <ArrowLeftRight className="h-6 w-6 text-primary" />
         <div>
-          <p className="text-sm font-bold leading-none">TRIRIGA</p>
-          <p className="text-xs text-muted-foreground">Kontracts Integration</p>
+          <p className="text-sm font-bold leading-none">Kontracts Integration</p>
         </div>
       </div>
 

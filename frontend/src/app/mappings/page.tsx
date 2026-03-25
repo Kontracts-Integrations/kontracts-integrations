@@ -22,7 +22,10 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
     mutationFn: () => mappingsApi.delete(mapping.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mappings"] });
-      toast({ title: "Mapping deleted" });
+      toast({ title: "Mapping Template Deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -44,59 +47,31 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
             <div className="flex items-center gap-2">
               <GitBranch className="h-4 w-4 text-primary" />
               <h3 className="font-medium">{mapping.name}</h3>
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-xs font-medium",
-                  mapping.is_active
-                    ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                    : "bg-gray-100 text-gray-600"
-                )}
-              >
-                {mapping.is_active ? "Active" : "Inactive"}
-              </span>
-              {mapping.current_version && (
-                <span className="text-xs text-muted-foreground">
-                  v{mapping.current_version.version_number}
-                </span>
-              )}
             </div>
-
             {mapping.description && (
               <p className="mt-1 text-sm text-muted-foreground">{mapping.description}</p>
             )}
-
             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              {mapping.tririga_module && (
-                <span>
-                  TRIRIGA: <code className="font-mono">{mapping.tririga_module}</code>
-                  {mapping.tririga_query_name && (
-                    <span> / {mapping.tririga_query_name}</span>
-                  )}
-                </span>
-              )}
-              {mapping.kontracts_endpoint && (
-                <span>
-                  →{" "}
-                  <code className="font-mono">
-                    {mapping.kontracts_method} {mapping.kontracts_endpoint}
-                  </code>
-                </span>
-              )}
               {mapping.current_version && (
                 <span>
-                  {mapping.current_version.field_mappings?.mappings?.length ?? 0} fields mapped
+                  {(() => { const n = mapping.current_version.field_mappings?.mappings?.length ?? 0; return `${n} ${n === 1 ? "field" : "fields"} mapped`; })()}
                 </span>
               )}
               <span>Updated {formatRelativeTime(mapping.updated_at)}</span>
             </div>
           </div>
-
           <div className="flex items-center gap-2 flex-shrink-0">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/mappings/${mapping.id}`}>
+                <Pencil className="h-4 w-4" />
+                <span className="ml-1 hidden sm:inline">Edit</span>
+              </Link>
+            </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={() => runMutation.mutate()}
               disabled={runMutation.isPending || !mapping.is_active}
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
               {runMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -105,16 +80,9 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
               )}
               <span className="ml-1 hidden sm:inline">Run</span>
             </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/mappings/${mapping.id}`}>
-                <Pencil className="h-4 w-4" />
-                <span className="ml-1 hidden sm:inline">Edit</span>
-              </Link>
-            </Button>
             <Button
-              variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-destructive"
+              className="bg-red-600 hover:bg-red-700 text-white"
               onClick={() => {
                 if (confirm(`Delete mapping "${mapping.name}"?`)) {
                   deleteMutation.mutate();
@@ -123,6 +91,7 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
               disabled={deleteMutation.isPending}
             >
               <Trash2 className="h-4 w-4" />
+              <span className="ml-1 hidden sm:inline">Delete</span>
             </Button>
           </div>
         </div>
@@ -181,15 +150,15 @@ function CreateMappingDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
           <Button
             onClick={() => createMutation.mutate()}
             disabled={!name.trim() || createMutation.isPending}
           >
             {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create & Configure
+            Create
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -205,6 +174,7 @@ export default function MappingsPage() {
     queryFn: () => mappingsApi.list(),
   });
 
+
   return (
     <MainLayout title="Mapping Templates">
       <div className="space-y-4">
@@ -216,7 +186,7 @@ export default function MappingsPage() {
           </div>
           <Button onClick={() => setShowCreate(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            New Mapping
+            New Mapping Template
           </Button>
         </div>
 

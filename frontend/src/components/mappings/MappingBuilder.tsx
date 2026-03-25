@@ -21,6 +21,7 @@ interface Props {
     updates: {
       name: string;
       description?: string;
+      source_module?: string;
       source_object?: string;
       source_query?: string;
       kontracts_endpoint?: string;
@@ -36,6 +37,7 @@ interface Props {
 export function MappingBuilder({ template, onSave, saving }: Props) {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? "");
+  const [sourceModule, setSourceModule] = useState(template.source_module ?? "");
   const [sourceObject, setSourceObject] = useState(template.source_object ?? "");
   const [sourceQuery, setSourceQuery] = useState(template.source_query ?? "");
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
@@ -55,6 +57,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
   useEffect(() => {
     setName(template.name);
     setDescription(template.description ?? "");
+    setSourceModule(template.source_module ?? "");
     setSourceObject(template.source_object ?? "");
     setSourceQuery(template.source_query ?? "");
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
@@ -74,11 +77,13 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
   const sourceConns = connections?.filter((c) => c.connection_type !== "kontracts") ?? [];
   const kontractsConns = connections?.filter((c) => c.connection_type === "kontracts") ?? [];
 
-  // Source fields
+  // Source fields — requires a business object to be selected
+  // Passes module_name so backend calls getObjectTypeByName(moduleName, objectTypeName) correctly
   const { data: sourceFields = [], isLoading: sourceLoading } = useQuery<SourceField[]>({
-    queryKey: ["source-fields", sourceObject, sourceConnId],
-    queryFn: () => sourceApi.getFields(sourceObject, sourceConnId),
+    queryKey: ["source-fields", sourceObject, sourceConnId, sourceModule],
+    queryFn: () => sourceApi.getFields(sourceObject, sourceConnId, sourceModule || undefined),
     enabled: !!sourceObject,
+    staleTime: 5 * 60 * 1000, // cache for 5 minutes — fields don't change often
   });
 
   // Kontracts fields
@@ -88,10 +93,17 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     enabled: !!kontractsEndpoint,
   });
 
-  // Source objects
-  const { data: objects = [] } = useQuery({
-    queryKey: ["source-objects", sourceConnId],
+  // Modules (top-level TRIRIGA modules)
+  const { data: modules = [] } = useQuery({
+    queryKey: ["source-modules", sourceConnId],
     queryFn: () => sourceApi.getObjects(sourceConnId),
+  });
+
+  // Business objects within the selected module
+  const { data: businessObjects = [], isLoading: boLoading } = useQuery({
+    queryKey: ["source-business-objects", sourceModule, sourceConnId],
+    queryFn: () => sourceApi.getBusinessObjects(sourceModule, sourceConnId),
+    enabled: !!sourceModule,
   });
 
   // Kontracts endpoints
@@ -145,6 +157,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     onSave({
       name,
       description: description || undefined,
+      source_module: sourceModule || undefined,
       source_object: sourceObject || undefined,
       source_query: sourceQuery || undefined,
       kontracts_endpoint: kontractsEndpoint || undefined,
@@ -209,15 +222,41 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
         </div>
 
         <div className="space-y-1">
-          <Label className="text-xs">Source Object</Label>
-          <Select value={sourceObject} onValueChange={setSourceObject}>
+          <Label className="text-xs">TRIRIGA Module</Label>
+          <Select
+            value={sourceModule}
+            onValueChange={(v) => {
+              setSourceModule(v);
+              setSourceObject(""); // reset business object when module changes
+            }}
+          >
             <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Select object..." />
+              <SelectValue placeholder="Select module..." />
             </SelectTrigger>
             <SelectContent>
-              {objects.map((m) => (
+              {modules.map((m) => (
                 <SelectItem key={m.name} value={m.name}>
                   {m.label ?? m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Business Object</Label>
+          <Select
+            value={sourceObject}
+            onValueChange={setSourceObject}
+            disabled={!sourceModule || boLoading}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder={!sourceModule ? "Select module first..." : boLoading ? "Loading..." : "Select object..."} />
+            </SelectTrigger>
+            <SelectContent>
+              {businessObjects.map((bo) => (
+                <SelectItem key={bo.name} value={bo.name}>
+                  {bo.label ?? bo.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -308,6 +347,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
                   mapping={mapping}
                   sourceFields={sourceFields}
                   targetFields={targetFields}
+                  sourceLoading={sourceLoading}
                   onChange={(updated) => updateRow(index, updated)}
                   onDelete={() => deleteRow(index)}
                   index={index}
