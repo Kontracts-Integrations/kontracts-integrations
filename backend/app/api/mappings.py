@@ -175,25 +175,26 @@ async def update_mapping(
     if not template:
         raise HTTPException(status_code=404, detail="Mapping template not found")
 
-    if payload.name is not None:
+    fields = payload.model_fields_set
+    if "name" in fields and payload.name is not None:
         template.name = payload.name
-    if payload.description is not None:
+    if "description" in fields:
         template.description = payload.description
-    if payload.source_connection_id is not None:
+    if "source_connection_id" in fields:
         template.source_connection_id = payload.source_connection_id
-    if payload.target_connection_id is not None:
+    if "target_connection_id" in fields:
         template.target_connection_id = payload.target_connection_id
-    if payload.source_module is not None:
+    if "source_module" in fields:
         template.source_module = payload.source_module
-    if payload.source_object is not None:
+    if "source_object" in fields:
         template.source_object = payload.source_object
-    if payload.source_query is not None:
+    if "source_query" in fields:
         template.source_query = payload.source_query
-    if payload.kontracts_endpoint is not None:
+    if "kontracts_endpoint" in fields:
         template.kontracts_endpoint = payload.kontracts_endpoint
-    if payload.kontracts_method is not None:
+    if "kontracts_method" in fields and payload.kontracts_method is not None:
         template.kontracts_method = payload.kontracts_method
-    if payload.is_active is not None:
+    if "is_active" in fields and payload.is_active is not None:
         template.is_active = payload.is_active
 
     if payload.field_mappings is not None:

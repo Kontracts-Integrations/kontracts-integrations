@@ -12,7 +12,7 @@ import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId } from "@/lib/utils";
-import { Plus, Save, Loader2 } from "lucide-react";
+import { Plus, Save, Loader2, Pencil } from "lucide-react";
 import type { FieldMapping, MappingTemplate, SourceField, KontractsField } from "@/types";
 
 interface Props {
@@ -20,21 +20,22 @@ interface Props {
   onSave: (
     updates: {
       name: string;
-      description?: string;
-      source_module?: string;
-      source_object?: string;
-      source_query?: string;
-      kontracts_endpoint?: string;
+      description?: string | null;
+      source_module?: string | null;
+      source_object?: string | null;
+      source_query?: string | null;
+      kontracts_endpoint?: string | null;
       kontracts_method?: string;
       field_mappings: FieldMapping[];
-      source_connection_id?: number;
-      target_connection_id?: number;
+      source_connection_id?: number | null;
+      target_connection_id?: number | null;
     }
   ) => Promise<void>;
   saving?: boolean;
+  saveRef?: React.MutableRefObject<(() => void) | null>;
 }
 
-export function MappingBuilder({ template, onSave, saving }: Props) {
+export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? "");
   const [sourceModule, setSourceModule] = useState(template.source_module ?? "");
@@ -52,6 +53,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
   const initialMappings: FieldMapping[] =
     template.current_version?.field_mappings?.mappings ?? [];
   const [mappings, setMappings] = useState<FieldMapping[]>(initialMappings);
+  const [isEditing, setIsEditing] = useState(!template.current_version);
 
   // Sync all local state when a new version is saved (current_version.id changes)
   useEffect(() => {
@@ -153,159 +155,187 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
     setMappings((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleSave = () => {
-    onSave({
-      name,
-      description: description || undefined,
-      source_module: sourceModule || undefined,
-      source_object: sourceObject || undefined,
-      source_query: sourceQuery || undefined,
-      kontracts_endpoint: kontractsEndpoint || undefined,
-      kontracts_method: kontractsMethod,
-      field_mappings: mappings,
-      source_connection_id: sourceConnId,
-      target_connection_id: targetConnId,
+  const buildPayload = () => ({
+    name,
+    description: description || null,
+    source_module: sourceModule || null,
+    source_object: sourceObject || null,
+    source_query: sourceQuery || null,
+    kontracts_endpoint: kontractsEndpoint || null,
+    kontracts_method: kontractsMethod,
+    field_mappings: mappings,
+    source_connection_id: sourceConnId ?? null,
+    target_connection_id: targetConnId ?? null,
+  });
+
+  // "Save Mapping" button — saves field mappings only, never touches isEditing
+  const handleSaveMappings = () => {
+    onSave(buildPayload());
+  };
+
+  // Details card button — toggles read-only/edit mode and saves on lock
+  const handleDetailsSave = () => {
+    if (!isEditing) {
+      setIsEditing(true);
+      return;
+    }
+    onSave(buildPayload()).then(() => {
+      setIsEditing(false);
+    }).catch(() => {
+      // keep editing mode on error so user can retry
     });
   };
+
+  if (saveRef) saveRef.current = handleSaveMappings;
 
   return (
     <div className="flex h-full flex-col space-y-4">
       {/* Header settings */}
-      <div className="grid grid-cols-2 gap-4 rounded-lg border bg-card p-4 lg:grid-cols-4">
-        <div className="col-span-2 space-y-1 lg:col-span-1">
-          <Label className="text-xs">Mapping Name</Label>
+      <div className="rounded-lg border bg-card p-4 space-y-4">
+        <div className="flex items-center justify-between border-b pb-3">
+          <h2 className="text-base font-semibold text-muted-foreground">Details</h2>
+          <Button size="sm" onClick={handleDetailsSave} disabled={saving}>
+            {saving ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : isEditing ? (
+              <Save className="mr-1 h-4 w-4" />
+            ) : (
+              <Pencil className="mr-1 h-4 w-4" />
+            )}
+            {isEditing ? "Save" : "Update"}
+          </Button>
+        </div>
+        {/* Row 1: Mapping Template Name */}
+        <div className="space-y-1">
+          <Label className="text-xs">Mapping Template Name</Label>
           <Input
-            className="h-8 text-xs"
+            className="h-8 text-xs max-w-sm"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={!isEditing}
           />
         </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Source Connection</Label>
-          <Select
-            value={sourceConnId ? String(sourceConnId) : "__default__"}
-            onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Default (env)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default__">Default (from env)</SelectItem>
-              {sourceConns.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Kontracts Connection</Label>
-          <Select
-            value={targetConnId ? String(targetConnId) : "__default__"}
-            onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Default (env)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default__">Default (from env)</SelectItem>
-              {kontractsConns.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">TRIRIGA Module</Label>
-          <Select
-            value={sourceModule}
-            onValueChange={(v) => {
-              setSourceModule(v);
-              setSourceObject(""); // reset business object when module changes
-            }}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Select module..." />
-            </SelectTrigger>
-            <SelectContent>
-              {modules.map((m) => (
-                <SelectItem key={m.name} value={m.name}>
-                  {m.label ?? m.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Business Object</Label>
-          <Select
-            value={sourceObject}
-            onValueChange={setSourceObject}
-            disabled={!sourceModule || boLoading}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder={!sourceModule ? "Select module first..." : boLoading ? "Loading..." : "Select object..."} />
-            </SelectTrigger>
-            <SelectContent>
-              {businessObjects.map((bo) => (
-                <SelectItem key={bo.name} value={bo.name}>
-                  {bo.label ?? bo.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Source Query / View</Label>
-          <Input
-            className="h-8 text-xs"
-            placeholder="All Active Leases"
-            value={sourceQuery}
-            onChange={(e) => setSourceQuery(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Kontracts Endpoint</Label>
-          <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Select endpoint..." />
-            </SelectTrigger>
-            <SelectContent>
-              {endpoints
-                .filter((e) => e.has_request_body)
-                .map((e) => (
-                  <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
-                    <span className="font-mono text-xs">{e.method}</span>{" "}
-                    <span>{e.path}</span>
-                  </SelectItem>
+        {/* Row 2: Source Connection, Kontracts Connection, Kontracts Endpoint, Method */}
+        <div className="grid grid-cols-4 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Source Connection</Label>
+            <Select
+              value={sourceConnId ? String(sourceConnId) : "__default__"}
+              onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
+              disabled={!isEditing}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Default (env)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Default (from env)</SelectItem>
+                {sourceConns.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                 ))}
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kontracts Connection</Label>
+            <Select
+              value={targetConnId ? String(targetConnId) : "__default__"}
+              onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}
+              disabled={!isEditing}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Default (env)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Default (from env)</SelectItem>
+                {kontractsConns.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kontracts Endpoint</Label>
+            <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint} disabled={!isEditing}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select endpoint..." />
+              </SelectTrigger>
+              <SelectContent>
+                {endpoints
+                  .filter((e) => e.has_request_body)
+                  .map((e) => (
+                    <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
+                      <span className="font-mono text-xs">{e.method}</span>{" "}
+                      <span>{e.path}</span>
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Method</Label>
+            <Select value={kontractsMethod} onValueChange={setKontractsMethod} disabled={!isEditing}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["POST", "PUT", "PATCH"].map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Method</Label>
-          <Select value={kontractsMethod} onValueChange={setKontractsMethod}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {["POST", "PUT", "PATCH"].map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Row 3: TRIRIGA Module, Business Object, Source Query/View */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">TRIRIGA Module</Label>
+            <Select
+              value={sourceModule}
+              onValueChange={(v) => {
+                setSourceModule(v);
+                setSourceObject("");
+              }}
+              disabled={!isEditing}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select module..." />
+              </SelectTrigger>
+              <SelectContent>
+                {modules.map((m) => (
+                  <SelectItem key={m.name} value={m.name}>{m.label ?? m.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">TRIRIGA Business Object</Label>
+            <Select
+              value={sourceObject}
+              onValueChange={setSourceObject}
+              disabled={!isEditing || !sourceModule || boLoading}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder={!sourceModule ? "Select module first..." : boLoading ? "Loading..." : "Select object..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {businessObjects.map((bo) => (
+                  <SelectItem key={bo.name} value={bo.name}>{bo.label ?? bo.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">TRIRIGA Query</Label>
+            <Input
+              className="h-8 text-xs"
+              placeholder="All Active Leases"
+              value={sourceQuery}
+              onChange={(e) => setSourceQuery(e.target.value)}
+              disabled={!isEditing}
+            />
+          </div>
         </div>
       </div>
 
@@ -323,7 +353,7 @@ export function MappingBuilder({ template, onSave, saving }: Props) {
               <Plus className="mr-1 h-4 w-4" />
               Add Row
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Button size="sm" onClick={handleSaveMappings} disabled={saving}>
               {saving ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
               ) : (

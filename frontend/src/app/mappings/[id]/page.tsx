@@ -1,13 +1,14 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
+import { useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mappingsApi } from "@/lib/api";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { MappingBuilder } from "@/components/mappings/MappingBuilder";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
 import type { MappingTemplateUpdate } from "@/types";
 
@@ -16,6 +17,8 @@ export default function MappingDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const id = parseInt(params.id as string);
+
+  const saveRef = useRef<(() => void) | null>(null);
 
   const { data: template, isLoading, error } = useQuery({
     queryKey: ["mapping", id],
@@ -64,8 +67,8 @@ export default function MappingDetailPage() {
   return (
     <MainLayout title={template.name}>
       <div className="flex h-full flex-col space-y-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
+        <div className="flex items-center">
+          <Button variant="outline" size="sm" asChild>
             <Link href="/mappings">
               <ArrowLeft className="mr-1 h-4 w-4" />
               Back
@@ -77,6 +80,7 @@ export default function MappingDetailPage() {
           template={template}
           onSave={(updates) => saveMutation.mutateAsync(updates)}
           saving={saveMutation.isPending}
+          saveRef={saveRef}
         />
       </div>
     </MainLayout>

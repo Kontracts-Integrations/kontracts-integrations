@@ -5,10 +5,9 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Plug,
-  GitBranch,
+  FileCode,
   Play,
   FileText,
-  ArrowLeftRight,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,7 +26,7 @@ const navItems = [
   {
     label: "Mapping Templates",
     href: "/mappings",
-    icon: GitBranch,
+    icon: FileCode,
   },
   {
     label: "Runs",
@@ -46,14 +45,6 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-card">
-      {/* Logo */}
-      <div className="flex h-16 items-center gap-2 border-b px-6">
-        <ArrowLeftRight className="h-6 w-6 text-primary" />
-        <div>
-          <p className="text-sm font-bold leading-none">Kontracts Integration</p>
-        </div>
-      </div>
-
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-4">
         {navItems.map((item) => {

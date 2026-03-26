@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { TransformEditor } from "./TransformEditor";
 import { cn } from "@/lib/utils";
-import { Trash2, ChevronDown, ChevronUp, GripVertical } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp, GripVertical, ChevronsUpDown } from "lucide-react";
 import type { FieldMapping, TririgaField, KontractsField, TransformType } from "@/types";
 
 const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
@@ -39,6 +41,7 @@ export function MappingRow({
   index,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
 
   const update = (patch: Partial<FieldMapping>) => {
     onChange({ ...mapping, ...patch });
@@ -55,34 +58,82 @@ export function MappingRow({
         {/* Row number */}
         <span className="w-5 text-center text-xs text-muted-foreground">{index + 1}</span>
 
-        {/* Source field */}
+        {/* Source field — searchable combobox */}
         <div className="flex-1">
-          <Select
-            value={mapping.source_field || "__none__"}
-            onValueChange={(v) => update({ source_field: v === "__none__" ? "" : v })}
-            disabled={sourceLoading}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder={sourceLoading ? "Loading fields..." : "Source field..."} />
-            </SelectTrigger>
-            <SelectContent>
-              {sourceLoading ? (
-                <div className="py-2 text-center text-xs text-muted-foreground">Loading fields...</div>
-              ) : sourceFields.length === 0 ? (
-                <div className="py-2 text-center text-xs text-muted-foreground">No fields — select a Business Object above</div>
-              ) : (
-                <>
-                  <SelectItem value="__none__">— none —</SelectItem>
-                  {sourceFields.map((f) => (
-                    <SelectItem key={f.name} value={f.name}>
-                      <span className="font-mono">{f.name}</span>
-                      <span className="ml-2 text-muted-foreground">({f.type})</span>
-                    </SelectItem>
-                  ))}
-                </>
-              )}
-            </SelectContent>
-          </Select>
+          <Popover open={sourceOpen} onOpenChange={setSourceOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                disabled={sourceLoading}
+                className="h-8 w-full justify-between text-xs font-normal"
+              >
+                {mapping.source_field ? (
+                  (() => {
+                    const raw = mapping.source_field;
+                    const [sec, name] = raw.includes("||") ? raw.split("||", 2) : ["", raw];
+                    return (
+                      <span className="truncate">
+                        {sec && <span className="text-muted-foreground">{sec}::</span>}
+                        <span className="font-mono">{name}</span>
+                      </span>
+                    );
+                  })()
+                ) : (
+                  <span className="text-muted-foreground">{sourceLoading ? "Loading fields..." : "Source field..."}</span>
+                )}
+                <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[400px] p-0">
+              <Command
+                filter={(value, search) => {
+                  // Search by field name (part after ||) and label — ignore section prefix
+                  const fieldName = value.includes("||") ? value.split("||")[1] : value;
+                  const field = sourceFields.find((f) => f.name === fieldName);
+                  const haystack = `${fieldName} ${field?.label ?? ""}`.toLowerCase();
+                  return haystack.includes(search.toLowerCase()) ? 1 : 0;
+                }}
+              >
+                <CommandInput placeholder="Search fields..." className="h-9" />
+                <CommandList>
+                  <CommandEmpty>No fields found.</CommandEmpty>
+                  <CommandItem
+                    value="__none__"
+                    onSelect={() => { update({ source_field: "" }); setSourceOpen(false); }}
+                  >
+                    — none —
+                  </CommandItem>
+                  {(() => {
+                    const grouped = sourceFields.reduce((acc, f) => {
+                      const sec = f.section || "General";
+                      if (!acc[sec]) acc[sec] = [];
+                      acc[sec].push(f);
+                      return acc;
+                    }, {} as Record<string, typeof sourceFields>);
+                    return Object.entries(grouped).map(([section, fields]) => (
+                      <CommandGroup key={section} heading={section}>
+                        {fields.map((f) => {
+                          const compositeValue = `${section}||${f.name}`;
+                          return (
+                            <CommandItem
+                              key={compositeValue}
+                              value={compositeValue}
+                              onSelect={() => { update({ source_field: compositeValue }); setSourceOpen(false); }}
+                            >
+                              <span className="font-mono">{f.name}</span>
+                              {f.label !== f.name && <span className="ml-1 text-muted-foreground">{f.label}</span>}
+                              <span className="ml-1 text-muted-foreground">({f.type})</span>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    ));
+                  })()}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Arrow */}

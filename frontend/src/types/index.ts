@@ -186,6 +186,7 @@ export interface SourceField {
   type: string;
   required?: boolean;
   read_only?: boolean;
+  section?: string;
 }
 
 // Backwards-compatible aliases

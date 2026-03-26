@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { cn, formatRelativeTime, getStatusColor } from "@/lib/utils";
-import { Plus, GitBranch, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, FileCode, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import type { MappingTemplate } from "@/types";
 
 function MappingCard({ mapping }: { mapping: MappingTemplate }) {
@@ -45,7 +45,7 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-primary" />
+              <FileCode className="h-4 w-4 text-primary" />
               <h3 className="font-medium">{mapping.name}</h3>
             </div>
             {mapping.description && (
@@ -184,7 +184,7 @@ export default function MappingsPage() {
               {mappings?.length ?? 0} mapping templates configured
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
+          <Button size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="mr-2 h-4 w-4" />
             New Mapping Template
           </Button>
@@ -196,7 +196,7 @@ export default function MappingsPage() {
           </div>
         ) : !mappings?.length ? (
           <div className="rounded-lg border-2 border-dashed py-16 text-center">
-            <GitBranch className="mx-auto h-12 w-12 text-muted-foreground/40" />
+            <FileCode className="mx-auto h-12 w-12 text-muted-foreground/40" />
             <h3 className="mt-4 text-lg font-medium">No mappings yet</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Create your first mapping template to start syncing data from TRIRIGA to Kontracts.

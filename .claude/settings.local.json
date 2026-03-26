@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose up:*)",
+      "Bash(docker compose:*)",
+      "Read(//c/Program Files/Docker/Docker/resources/bin//**)",
+      "Read(//c/Program Files/Docker//**)",
+      "Bash(\"/c/Program Files/Docker/Docker/resources/bin/docker\" compose up -d)"
+    ]
+  }
+}

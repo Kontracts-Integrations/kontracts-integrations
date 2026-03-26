@@ -39,6 +39,9 @@ class MappingEngine:
 
         for mapping in self.field_mappings:
             source_field = mapping.get("source_field", "")
+            # Strip section prefix (e.g. "General||triNameTX" → "triNameTX")
+            if "||" in source_field:
+                source_field = source_field.split("||", 1)[1]
             target_field = mapping.get("target_field", "")
             transform_type = mapping.get("transform_type", "direct")
             transform_config = mapping.get("transform_config") or {}

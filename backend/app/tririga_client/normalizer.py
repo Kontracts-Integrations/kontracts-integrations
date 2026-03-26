@@ -107,15 +107,20 @@ def extract_fields(normalized: Any) -> List[Dict[str, Any]]:
             for section in section_list:
                 if not isinstance(section, dict):
                     continue
+                section_name = section.get("sectionLabel", section.get("label", section.get("name", "General")))
                 # Resolve fields — may be {"Field": [...]} or a plain list
                 raw_fields = section.get("fields", section.get("field", []))
                 field_list = _unwrap_single_key(raw_fields) if isinstance(raw_fields, dict) else raw_fields
 
                 if isinstance(field_list, list):
                     for f in field_list:
-                        fields.append(_normalize_field(f))
+                        field = _normalize_field(f)
+                        field["section"] = section_name
+                        fields.append(field)
                 elif isinstance(field_list, dict):
-                    fields.append(_normalize_field(field_list))
+                    field = _normalize_field(field_list)
+                    field["section"] = section_name
+                    fields.append(field)
 
     if not fields:
         fields = _get_default_fields()
