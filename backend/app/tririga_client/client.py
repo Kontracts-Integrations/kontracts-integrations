@@ -124,9 +124,30 @@ class TririgaClient:
             )
             from app.tririga_client.normalizer import normalize_soap_response
             normalized = normalize_soap_response(result)
+
+            # Unwrap zeep's "out" envelope and other common wrappers
+            items = []
             if isinstance(normalized, list):
-                return normalized
-            return normalized.get("modules", normalized.get("item", [normalized]))
+                items = normalized
+            elif isinstance(normalized, dict):
+                for key in ("out", "modules", "item", "result"):
+                    if key in normalized:
+                        val = normalized[key]
+                        items = val if isinstance(val, list) else [val]
+                        break
+                if not items:
+                    items = [normalized]
+
+            # Normalize each item to {name, label, id} so the frontend can render it
+            return [
+                {
+                    "name": str(item.get("name", item)) if isinstance(item, dict) else str(item),
+                    "label": str(item.get("label", item.get("name", item))) if isinstance(item, dict) else str(item),
+                    "id": item.get("id") if isinstance(item, dict) else None,
+                }
+                for item in items
+                if item
+            ]
         except Exception as e:
             logger.error(f"getModules failed: {e}")
             raise
@@ -199,6 +220,99 @@ class TririgaClient:
             logger.error(f"getObjectTypeByName failed for {module_name}/{object_type_name}: {e}")
             raise
 
+    async def get_associated_objects(
+        self, object_type_id: int
+    ) -> List[Dict[str, Any]]:
+        if self.demo_mode:
+            from app.tririga_client.fixtures import get_demo_associated_objects
+            return get_demo_associated_objects(object_type_id)
+
+        loop = asyncio.get_event_loop()
+        try:
+            client = await loop.run_in_executor(None, self._get_zeep_client)
+            result = await loop.run_in_executor(
+                None,
+                lambda: client.service.getAssociationDefinitions(
+                    objectTypeId=object_type_id,
+                ),
+            )
+            from app.tririga_client.normalizer import normalize_soap_response
+            normalized = normalize_soap_response(result)
+
+            # Unwrap "out" envelope
+            if isinstance(normalized, dict) and "out" in normalized:
+                normalized = normalized["out"]
+
+            # Build module ID → name map to resolve associatedModuleId
+            modules = await self.get_modules()
+            module_id_map = {
+                m["id"]: m["name"]
+                for m in modules
+                if isinstance(m.get("id"), int)
+            }
+
+            # Normalise to list of AssociationDefinition items
+            if isinstance(normalized, dict):
+                items = normalized.get("AssociationDefinition", normalized.get("item", []))
+            elif isinstance(normalized, list):
+                items = normalized
+            else:
+                items = [normalized] if normalized else []
+            if not isinstance(items, list):
+                items = [items]
+
+            # Collect unique (module_id, module_name) pairs from items
+            module_id_to_name: dict = {}
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                mid = item.get("associatedModuleId")
+                if mid is not None and mid not in module_id_to_name:
+                    module_id_to_name[mid] = module_id_map.get(mid, str(mid)).strip()
+
+            # Resolve associatedObjectTypeId → object type name for each module in parallel
+            async def _fetch_bo_id_map(module_name: str) -> dict:
+                try:
+                    bos = await self.get_business_objects(module_name, is_stand_alone=False)
+                    return {bo["id"]: bo["name"] for bo in bos if bo.get("id") is not None}
+                except Exception:
+                    return {}
+
+            bo_id_maps: dict = {}  # {module_id: {obj_type_id: obj_type_name}}
+            tasks = {
+                mid: _fetch_bo_id_map(mname)
+                for mid, mname in module_id_to_name.items()
+                if mname
+            }
+            fetched = await asyncio.gather(*tasks.values(), return_exceptions=True)
+            for mid, result_or_exc in zip(tasks.keys(), fetched):
+                bo_id_maps[mid] = result_or_exc if isinstance(result_or_exc, dict) else {}
+
+            results = []
+            seen = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                assoc_name = item.get("associationName") or ""
+                assoc_module_id = item.get("associatedModuleId")
+                assoc_obj_type_id = item.get("associatedObjectTypeId")
+                assoc_module = module_id_to_name.get(assoc_module_id, str(assoc_module_id) if assoc_module_id is not None else "")
+                obj_type_name = bo_id_maps.get(assoc_module_id, {}).get(assoc_obj_type_id, "")
+                key = (assoc_module, obj_type_name, assoc_name)
+                if key not in seen:
+                    seen.add(key)
+                    results.append({
+                        "module_name": assoc_module,
+                        "object_type_name": obj_type_name,
+                        "association_name": assoc_name,
+                    })
+
+            logger.info(f"get_associated_objects found {len(results)} associations for objectTypeId={object_type_id}")
+            return results
+        except Exception as e:
+            logger.error(f"get_associated_objects failed for objectTypeId={object_type_id}: {e}")
+            raise
+
     async def run_named_query(
         self,
         module_name: str,
@@ -214,7 +328,6 @@ class TririgaClient:
         try:
             client = await loop.run_in_executor(None, self._get_zeep_client)
 
-            # Build filter string from dict
             filter_str = ""
             if filters:
                 parts = []
@@ -236,6 +349,69 @@ class TririgaClient:
             return normalize_query_response(result)
         except Exception as e:
             logger.error(f"runNamedQuery failed for {module_name}/{query_name}: {e}")
+            raise
+
+    async def run_dynamic_query(
+        self,
+        module_name: str,
+        object_type_name: str,
+        field_names: Optional[List[str]] = None,
+        filter_condition: str = "",
+        max_records: int = 500,
+    ) -> List[Dict[str, Any]]:
+        if self.demo_mode:
+            from app.tririga_client.fixtures import get_demo_records
+            return get_demo_records(module_name, object_type_name, max_records)
+
+        loop = asyncio.get_event_loop()
+        try:
+            client = await loop.run_in_executor(None, self._get_zeep_client)
+            def _call_dynamic_query():
+                ns_dto = "{http://dto.ws.tririga.com}"
+                ns_ws = "{http://ws.tririga.com}"
+                DisplayLabel = client.get_type(f"{ns_dto}DisplayLabel")
+                ArrayOfDisplayLabel = client.get_type(f"{ns_dto}ArrayOfDisplayLabel")
+                empty_sort = client.get_type(f"{ns_dto}ArrayOfFieldSortOrder")()
+                empty_filter = client.get_type(f"{ns_dto}ArrayOfFilter")()
+                empty_assoc_filter = client.get_type(f"{ns_dto}ArrayOfAssociationFilter")()
+                obj_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[object_type_name])
+                gui_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[])
+
+                # Build displayFields from mapped source field names
+                display_labels = []
+                for fname in (field_names or []):
+                    # Extract section and field name from section||fieldName format
+                    if "||" in fname:
+                        section, clean = fname.split("||", 1)
+                    else:
+                        section, clean = "", fname
+                    if clean:
+                        display_labels.append(DisplayLabel(fieldName=clean, label=clean, sectionName=section))
+                display_fields = ArrayOfDisplayLabel(DisplayLabel=display_labels) if display_labels else ArrayOfDisplayLabel()
+
+                return client.service.runDynamicQuery(
+                    projectName="",
+                    moduleName=module_name,
+                    objectTypeNames=obj_names,
+                    guiNames=gui_names,
+                    associatedModuleName="",
+                    associatedObjectTypeName="",
+                    projectScope=2,
+                    displayFields=display_fields,
+                    associatedDisplayFields=ArrayOfDisplayLabel(),
+                    fieldSortOrders=empty_sort,
+                    filters=empty_filter,
+                    associationFilters=empty_assoc_filter,
+                    start=1,
+                    maximumResultCount=max_records,
+                )
+
+            result = await loop.run_in_executor(None, _call_dynamic_query)
+            from app.tririga_client.normalizer import normalize_dynamic_query_response
+            return normalize_dynamic_query_response(result)
+        except Exception as e:
+            detail = getattr(e, "detail", None) or getattr(e, "message", None) or ""
+            logger.error(f"runDynamicQuery failed for {module_name}/{object_type_name}: {e} | detail: {detail}")
             raise
 
     async def get_record(self, spec_id: int, record_id: int) -> Dict[str, Any]:

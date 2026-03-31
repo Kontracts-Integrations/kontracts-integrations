@@ -200,3 +200,27 @@ def get_demo_fields(module_name: str):
 
 def get_demo_records(module_name: str, query_name: str, max_records: int):
     return DEMO_RECORDS[:max_records]
+
+
+DEMO_ASSOCIATED_OBJECTS: Dict[str, List[Dict[str, Any]]] = {
+    "triRealEstateLease": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triLeaseContactAssoc"},
+        {"module_name": "triLocation", "object_type_name": "triBuilding", "association_name": "triLeaseLocationAssoc"},
+        {"module_name": "triContract", "object_type_name": "triContract", "association_name": "triLeaseContractAssoc"},
+    ],
+    "triBuilding": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triBuildingContactAssoc"},
+        {"module_name": "triLocation", "object_type_name": "triFloor", "association_name": "triBuildingFloorAssoc"},
+    ],
+    "triContract": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triContractContactAssoc"},
+        {"module_name": "triRealEstateLease", "object_type_name": "triRealEstateLease", "association_name": "triContractLeaseAssoc"},
+    ],
+}
+
+
+def get_demo_associated_objects(module_name: str, object_type_name: str) -> List[Dict[str, Any]]:
+    return DEMO_ASSOCIATED_OBJECTS.get(
+        object_type_name,
+        DEMO_ASSOCIATED_OBJECTS.get(module_name, []),
+    )

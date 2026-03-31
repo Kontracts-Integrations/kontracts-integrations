@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
-import { generateId } from "@/lib/utils";
+import { generateId, cn } from "@/lib/utils";
 import { Plus, Save, Loader2, Pencil } from "lucide-react";
 import type { FieldMapping, MappingTemplate, SourceField, KontractsField } from "@/types";
 
@@ -29,6 +29,10 @@ interface Props {
       field_mappings: FieldMapping[];
       source_connection_id?: number | null;
       target_connection_id?: number | null;
+      fetch_associated?: boolean;
+      assoc_module?: string | null;
+      assoc_object?: string | null;
+      assoc_string?: string | null;
     }
   ) => Promise<void>;
   saving?: boolean;
@@ -43,6 +47,11 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [sourceQuery, setSourceQuery] = useState(template.source_query ?? "");
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
+  const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
+  const [sourceObjectId, setSourceObjectId] = useState<number | undefined>(undefined);
+  const [assocModule, setAssocModule] = useState(template.assoc_module ?? "");
+  const [assocObject, setAssocObject] = useState(template.assoc_object ?? "");
+  const [assocString, setAssocString] = useState(template.assoc_string ?? "");
   const [sourceConnId, setSourceConnId] = useState<number | undefined>(
     template.source_connection_id ?? undefined
   );
@@ -66,6 +75,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setKontractsMethod(template.kontracts_method ?? "POST");
     setSourceConnId(template.source_connection_id ?? undefined);
     setTargetConnId(template.target_connection_id ?? undefined);
+    setFetchAssociatedObjects(template.fetch_associated ?? false);
+    setAssocModule(template.assoc_module ?? "");
+    setAssocObject(template.assoc_object ?? "");
+    setAssocString(template.assoc_string ?? "");
     setMappings(template.current_version?.field_mappings?.mappings ?? []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template.id, template.current_version?.id]);
@@ -108,6 +121,39 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     enabled: !!sourceModule,
   });
 
+  // Sync sourceObjectId when businessObjects loads and sourceObject is already set (e.g. from saved template)
+  useEffect(() => {
+    if (sourceObject && businessObjects.length > 0) {
+      const bo = businessObjects.find((b) => b.name === sourceObject);
+      setSourceObjectId(bo?.id ?? undefined);
+    }
+  }, [sourceObject, businessObjects]);
+
+  // Fields for the associated BO (when one is selected in Row 5)
+  const { data: assocFields = [], isLoading: assocFieldsLoading } = useQuery<SourceField[]>({
+    queryKey: ["source-fields", assocObject, sourceConnId, assocModule],
+    queryFn: () => sourceApi.getFields(assocObject, sourceConnId, assocModule || undefined),
+    enabled: fetchAssociatedObjects && !!assocObject,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Associated objects — fetched via getAssociationDefinitions using the selected BO's object type ID
+  const { data: associatedObjects = [], isLoading: assocLoading } = useQuery({
+    queryKey: ["source-associated-objects", sourceObjectId, sourceConnId],
+    queryFn: () => sourceApi.getAssociatedObjects(sourceObjectId!, sourceConnId),
+    enabled: fetchAssociatedObjects && !!sourceObjectId,
+  });
+
+  const assocModuleOptions = [...new Set(associatedObjects.map((a) => a.module_name))];
+  const assocObjectOptions = [...new Set(
+    associatedObjects
+      .filter((a) => a.module_name === assocModule)
+      .map((a) => a.object_type_name)
+  )];
+  const assocStringOptions = associatedObjects
+    .filter((a) => a.module_name === assocModule && a.object_type_name === assocObject)
+    .map((a) => a.association_name);
+
   // Kontracts endpoints
   const { data: endpoints = [] } = useQuery({
     queryKey: ["kontracts-endpoints", targetConnId],
@@ -139,6 +185,21 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
         target_field: "",
         transform_type: "direct",
         is_required: false,
+        use_associated: false,
+      },
+    ]);
+  };
+
+  const addAssocRow = () => {
+    setMappings((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        source_field: "",
+        target_field: "",
+        transform_type: "direct",
+        is_required: false,
+        use_associated: true,
       },
     ]);
   };
@@ -166,6 +227,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     field_mappings: mappings,
     source_connection_id: sourceConnId ?? null,
     target_connection_id: targetConnId ?? null,
+    fetch_associated: fetchAssociatedObjects,
+    assoc_module: assocModule || null,
+    assoc_object: assocObject || null,
+    assoc_string: assocString || null,
   });
 
   // "Save Mapping" button — saves field mappings only, never touches isEditing
@@ -287,8 +352,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
           </div>
         </div>
 
-        {/* Row 3: TRIRIGA Module, Business Object, Source Query/View */}
-        <div className="grid grid-cols-3 gap-4">
+        {/* Row 3: TRIRIGA Module, Business Object */}
+        <div className="grid grid-cols-2 gap-4 border-l-4 border-l-blue-400 pl-3 rounded-sm">
           <div className="space-y-1">
             <Label className="text-xs">TRIRIGA Module</Label>
             <Select
@@ -296,11 +361,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               onValueChange={(v) => {
                 setSourceModule(v);
                 setSourceObject("");
+                setSourceObjectId(undefined);
               }}
-              disabled={!isEditing}
+              disabled={!isEditing || fetchAssociatedObjects}
             >
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Select module..." />
+                <SelectValue placeholder="Select TRIRIGA Module..." />
               </SelectTrigger>
               <SelectContent>
                 {modules.map((m) => (
@@ -313,11 +379,18 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             <Label className="text-xs">TRIRIGA Business Object</Label>
             <Select
               value={sourceObject}
-              onValueChange={setSourceObject}
-              disabled={!isEditing || !sourceModule || boLoading}
+              onValueChange={(v) => {
+                setSourceObject(v);
+                const bo = businessObjects.find((b) => b.name === v);
+                setSourceObjectId(bo?.id ?? undefined);
+                setAssocModule("");
+                setAssocObject("");
+                setAssocString("");
+              }}
+              disabled={!isEditing || !sourceModule || boLoading || fetchAssociatedObjects}
             >
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder={!sourceModule ? "Select module first..." : boLoading ? "Loading..." : "Select object..."} />
+                <SelectValue placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."} />
               </SelectTrigger>
               <SelectContent>
                 {businessObjects.map((bo) => (
@@ -326,17 +399,86 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">TRIRIGA Query</Label>
-            <Input
-              className="h-8 text-xs"
-              placeholder="All Active Leases"
-              value={sourceQuery}
-              onChange={(e) => setSourceQuery(e.target.value)}
+        </div>
+
+        {/* Row 4: Fetch Associated Objects */}
+        <div className={cn("flex items-center gap-2 border-l-4 pl-3 rounded-sm transition-colors", fetchAssociatedObjects ? "border-l-purple-400" : "border-l-transparent")}>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-primary"
+              checked={fetchAssociatedObjects}
+              onChange={(e) => {
+                setFetchAssociatedObjects(e.target.checked);
+                if (!e.target.checked) {
+                  setAssocModule("");
+                  setAssocObject("");
+                  setAssocString("");
+                  setMappings((prev) => prev.filter((m) => !m.use_associated));
+                }
+              }}
               disabled={!isEditing}
             />
-          </div>
+            Fetch Associated Objects?
+          </label>
         </div>
+
+        {/* Row 5: Associated object selectors — visible only when checkbox is checked */}
+        {fetchAssociatedObjects && (
+          <div className="grid grid-cols-3 gap-4 border-l-4 border-l-purple-400 pl-3 rounded-sm">
+            <div className="space-y-1">
+              <Label className="text-xs">Associated TRIRIGA Module</Label>
+              <Select
+                value={assocModule}
+                onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }}
+                disabled={!isEditing || assocLoading}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={assocLoading ? "Loading..." : "Select Associated Module..."} />
+                </SelectTrigger>
+                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
+                  {assocModuleOptions.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Associated TRIRIGA Business Object</Label>
+              <Select
+                value={assocObject}
+                onValueChange={(v) => { setAssocObject(v); setAssocString(""); }}
+                disabled={!isEditing || !assocModule}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."} />
+                </SelectTrigger>
+                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
+                  {assocObjectOptions.map((o) => (
+                    <SelectItem key={o} value={o}>{o}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Association String</Label>
+              <Select
+                value={assocString}
+                onValueChange={setAssocString}
+                disabled={!isEditing || !assocObject}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={!assocObject ? "Select Associated Business Object first..." : "Select Association String..."} />
+                </SelectTrigger>
+                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
+                  {assocStringOptions.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main builder tabs */}
@@ -349,17 +491,23 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
           </TabsList>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={addRow}>
+            <Button variant="outline" size="sm" onClick={addRow} className="border-blue-400 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950">
               <Plus className="mr-1 h-4 w-4" />
-              Add Row
+              Add Mapping (Base BO)
             </Button>
+            {fetchAssociatedObjects && (
+              <Button variant="outline" size="sm" onClick={addAssocRow} className="border-purple-400 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950">
+                <Plus className="mr-1 h-4 w-4" />
+                Add Mapping (Associated BO)
+              </Button>
+            )}
             <Button size="sm" onClick={handleSaveMappings} disabled={saving}>
               {saving ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
               ) : (
                 <Save className="mr-1 h-4 w-4" />
               )}
-              Save Mapping
+              Save Mappings
             </Button>
           </div>
         </div>
@@ -376,6 +524,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                   key={mapping.id}
                   mapping={mapping}
                   sourceFields={sourceFields}
+                  assocFields={assocFields}
+                  assocFieldsLoading={assocFieldsLoading}
                   targetFields={targetFields}
                   sourceLoading={sourceLoading}
                   onChange={(updated) => updateRow(index, updated)}

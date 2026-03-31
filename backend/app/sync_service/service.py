@@ -70,19 +70,27 @@ class SyncService:
         tririga_client = await self._build_tririga_client(template)
         kontracts_client = await self._build_kontracts_client(template)
 
-        # Fetch TRIRIGA data
+        # Extract source field names from field mappings
+        field_mappings_data = version.field_mappings.get("mappings", [])
+        source_field_names = [
+            fm["source_field"] for fm in field_mappings_data
+            if fm.get("source_field")
+        ]
+
+        # Fetch TRIRIGA data via runDynamicQuery
         await self._log(
             run_id,
             LogLevel.info,
-            f"Fetching TRIRIGA data: module={template.source_object}, "
-            f"query={template.source_query}",
+            f"Fetching TRIRIGA data: module={template.source_module}, "
+            f"object={template.source_object}, fields={len(source_field_names)}",
             "tririga_client",
         )
 
-        records = await tririga_client.run_named_query(
-            module_name=template.source_object or "",
-            query_name=template.source_query or "",
-            filters={},
+        records = await tririga_client.run_dynamic_query(
+            module_name=template.source_module or "",
+            object_type_name=template.source_object or "",
+            field_names=source_field_names,
+            filter_condition="",
             max_records=500,
         )
 
@@ -96,7 +104,6 @@ class SyncService:
         await self.db.flush()
 
         # Build mapping engine
-        field_mappings_data = version.field_mappings.get("mappings", [])
         from app.mapping_engine.engine import MappingEngine
         engine = MappingEngine(field_mappings_data)
 
@@ -126,9 +133,10 @@ class SyncService:
 
         for i, source_record in enumerate(records):
             record_id = str(
+                source_record.get("triRecordId",
                 source_record.get("triRecordIdSY",
                 source_record.get("id",
-                source_record.get("recordId", f"record_{i}")))
+                source_record.get("recordId", f"record_{i}"))))
             )
 
             try:
@@ -251,24 +259,21 @@ class SyncService:
             return None, None
 
         result = await self.db.execute(
-            select(MappingTemplate)
-            .where(MappingTemplate.id == template_id)
-            .options(selectinload(MappingTemplate.versions))
+            select(MappingTemplate).where(MappingTemplate.id == template_id)
         )
         template = result.scalar_one_or_none()
         if not template:
             return None, None
 
-        raw = template.versions
-        versions: list = raw if isinstance(raw, list) else ([raw] if raw is not None else [])
-
-        current_version = None
-        for v in versions:
-            if v.is_current:
-                current_version = v
-                break
-        if not current_version and versions:
-            current_version = versions[0]
+        # Query current version directly — avoids relationship loading issues
+        version_result = await self.db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.template_id == template_id)
+            .where(MappingVersion.is_current.is_(True))
+            .order_by(MappingVersion.version_number.desc())
+            .limit(1)
+        )
+        current_version = version_result.scalar_one_or_none()
 
         return template, current_version
 

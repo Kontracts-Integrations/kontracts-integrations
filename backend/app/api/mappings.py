@@ -65,6 +65,10 @@ def _build_response_with_version(
         source_query=template.source_query,
         kontracts_endpoint=template.kontracts_endpoint,
         kontracts_method=template.kontracts_method,
+        fetch_associated=template.fetch_associated,
+        assoc_module=template.assoc_module,
+        assoc_object=template.assoc_object,
+        assoc_string=template.assoc_string,
         is_active=template.is_active,
         created_at=template.created_at,
         updated_at=template.updated_at,
@@ -196,6 +200,14 @@ async def update_mapping(
         template.kontracts_method = payload.kontracts_method
     if "is_active" in fields and payload.is_active is not None:
         template.is_active = payload.is_active
+    if "fetch_associated" in fields and payload.fetch_associated is not None:
+        template.fetch_associated = payload.fetch_associated
+    if "assoc_module" in fields:
+        template.assoc_module = payload.assoc_module
+    if "assoc_object" in fields:
+        template.assoc_object = payload.assoc_object
+    if "assoc_string" in fields:
+        template.assoc_string = payload.assoc_string
 
     if payload.field_mappings is not None:
         await db.execute(

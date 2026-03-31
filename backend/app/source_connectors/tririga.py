@@ -17,6 +17,11 @@ class TririgaSourceConnector(SourceConnector):
     async def get_business_objects(self, module_name: str) -> List[Dict[str, Any]]:
         return await self._client.get_business_objects(module_name)
 
+    async def get_associated_objects(
+        self, object_type_id: int
+    ) -> List[Dict[str, Any]]:
+        return await self._client.get_associated_objects(object_type_id)
+
     async def get_object_fields(
         self, object_name: str, module_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:

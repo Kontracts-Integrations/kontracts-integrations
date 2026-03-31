@@ -110,6 +110,24 @@ async def get_fields(
         raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
 
 
+@router.get("/associated-objects")
+async def get_associated_objects(
+    object_type_id: int = Query(...),
+    connection_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(connection_id, db)
+    try:
+        if hasattr(connector, "get_associated_objects"):
+            associations = await connector.get_associated_objects(object_type_id)
+        else:
+            associations = []
+        return {"object_type_id": object_type_id, "associations": associations}
+    except Exception as e:
+        logger.error(f"get_associated_objects failed for objectTypeId={object_type_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
+
+
 class PreviewRequest(BaseModel):
     connection_id: Optional[int] = None
     object_name: str

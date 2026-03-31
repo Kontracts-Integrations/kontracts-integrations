@@ -34,6 +34,10 @@ class MappingTemplateCreate(BaseModel):
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = Field(default="POST", pattern="^(GET|POST|PUT|PATCH|DELETE)$")
     field_mappings: List[FieldMapping] = Field(default_factory=list)
+    fetch_associated: bool = False
+    assoc_module: Optional[str] = None
+    assoc_object: Optional[str] = None
+    assoc_string: Optional[str] = None
 
 
 class MappingTemplateUpdate(BaseModel):
@@ -48,6 +52,10 @@ class MappingTemplateUpdate(BaseModel):
     kontracts_method: Optional[str] = None
     field_mappings: Optional[List[FieldMapping]] = None
     is_active: Optional[bool] = None
+    fetch_associated: Optional[bool] = None
+    assoc_module: Optional[str] = None
+    assoc_object: Optional[str] = None
+    assoc_string: Optional[str] = None
 
 
 class MappingVersionResponse(BaseModel):
@@ -72,6 +80,10 @@ class MappingTemplateResponse(BaseModel):
     source_query: Optional[str]
     kontracts_endpoint: Optional[str]
     kontracts_method: Optional[str]
+    fetch_associated: bool = False
+    assoc_module: Optional[str] = None
+    assoc_object: Optional[str] = None
+    assoc_string: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

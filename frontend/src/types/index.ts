@@ -50,7 +50,8 @@ export type TransformType =
   | "boolean_convert"
   | "string_template"
   | "lookup_table"
-  | "json_path";
+  | "json_path"
+  | "currency_code";
 
 export interface FieldMapping {
   id: string;
@@ -60,6 +61,7 @@ export interface FieldMapping {
   transform_config?: Record<string, unknown> | null;
   is_required: boolean;
   description?: string | null;
+  use_associated?: boolean;
 }
 
 export interface MappingVersion {
@@ -82,6 +84,10 @@ export interface MappingTemplate {
   source_query: string | null;
   kontracts_endpoint: string | null;
   kontracts_method: string | null;
+  fetch_associated: boolean;
+  assoc_module: string | null;
+  assoc_object: string | null;
+  assoc_string: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -99,6 +105,10 @@ export interface MappingTemplateCreate {
   kontracts_endpoint?: string;
   kontracts_method?: string;
   field_mappings: FieldMapping[];
+  fetch_associated?: boolean;
+  assoc_module?: string;
+  assoc_object?: string;
+  assoc_string?: string;
 }
 
 export interface MappingTemplateUpdate {
@@ -111,6 +121,10 @@ export interface MappingTemplateUpdate {
   source_query?: string;
   kontracts_endpoint?: string;
   kontracts_method?: string;
+  fetch_associated?: boolean;
+  assoc_module?: string;
+  assoc_object?: string;
+  assoc_string?: string;
   field_mappings?: FieldMapping[];
   is_active?: boolean;
 }
@@ -177,6 +191,7 @@ export interface LogEntry {
 export interface SourceObject {
   name: string;
   label: string;
+  id?: number;
   category?: string;
 }
 

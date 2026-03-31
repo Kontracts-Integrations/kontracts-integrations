@@ -143,6 +143,18 @@ export const sourceApi = {
     const r = await http.get<{ fields: SourceField[] }>("/source/fields", { params });
     return r.data.fields;
   },
+  getAssociatedObjects: async (
+    objectTypeId: number,
+    connectionId?: number
+  ): Promise<{ module_name: string; object_type_name: string; association_name: string }[]> => {
+    const params: Record<string, unknown> = { object_type_id: objectTypeId };
+    if (connectionId) params.connection_id = connectionId;
+    const r = await http.get<{ associations: { module_name: string; object_type_name: string; association_name: string }[] }>(
+      "/source/associated-objects",
+      { params }
+    );
+    return r.data.associations;
+  },
   preview: async (
     objectName: string,
     queryName: string,

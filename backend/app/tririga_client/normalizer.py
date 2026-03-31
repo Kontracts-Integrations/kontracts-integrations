@@ -76,6 +76,86 @@ def normalize_query_response(obj: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def normalize_dynamic_query_response(obj: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize the result of a TRIRIGA runDynamicQuery call into a list of records.
+    Handles the queryResponseHelpers structure returned by the TRIRIGA SOAP API.
+    """
+    normalized = normalize_soap_response(obj)
+
+    if normalized is None:
+        return []
+
+    if isinstance(normalized, list):
+        return normalized
+
+    if isinstance(normalized, dict):
+        # Unwrap zeep's <out> envelope if present
+        if "out" in normalized and isinstance(normalized["out"], dict):
+            normalized = normalized["out"]
+
+        # Primary TRIRIGA runDynamicQuery structure:
+        # { queryResponseHelpers: { QueryResponseHelper: [ { queryResponseColumns: { QueryResponseColumn: [...] } } ] } }
+        helpers_wrapper = normalized.get("queryResponseHelpers")
+        if helpers_wrapper:
+            helpers = helpers_wrapper.get("QueryResponseHelper", []) if isinstance(helpers_wrapper, dict) else helpers_wrapper
+            if isinstance(helpers, dict):
+                helpers = [helpers]
+            result = []
+            for helper in (helpers or []):
+                if not isinstance(helper, dict):
+                    continue
+                record = {
+                    "triRecordId": helper.get("recordId"),
+                    "triBoId": helper.get("boId"),
+                }
+                cols_wrapper = helper.get("queryResponseColumns", {})
+                cols = cols_wrapper.get("QueryResponseColumn", []) if isinstance(cols_wrapper, dict) else []
+                if isinstance(cols, dict):
+                    cols = [cols]
+                for col in (cols or []):
+                    if isinstance(col, dict):
+                        name = col.get("name") or col.get("label")
+                        if name:
+                            record[name] = col.get("value")
+                result.append(record)
+            return result
+
+        # columnHeaders + rowData fallback
+        if "columnHeaders" in normalized or "rowData" in normalized:
+            headers = normalized.get("columnHeaders") or []
+            rows = normalized.get("rowData") or []
+            if isinstance(headers, list) and isinstance(rows, list):
+                result = []
+                for row in rows:
+                    record = {}
+                    values = row.get("values", []) if isinstance(row, dict) else []
+                    if isinstance(values, dict):
+                        values = list(values.values())
+                    for i, header in enumerate(headers):
+                        field_name = (
+                            header.get("fieldName", header.get("name", f"field_{i}"))
+                            if isinstance(header, dict)
+                            else str(header)
+                        )
+                        record[field_name] = values[i] if i < len(values) else None
+                    result.append(record)
+                return result
+
+        # Flat list nested under a common key
+        for key in ("queryResultList", "records", "item", "result", "rowData"):
+            if key in normalized:
+                val = normalized[key]
+                if isinstance(val, list):
+                    return val
+                if isinstance(val, dict):
+                    return [val]
+
+        return [normalized]
+
+    return []
+
+
 def _unwrap_single_key(obj: Any) -> Any:
     """If a dict has exactly one key whose value is a list, return that list."""
     if isinstance(obj, dict) and len(obj) == 1:

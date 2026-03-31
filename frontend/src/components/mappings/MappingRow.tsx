@@ -19,11 +19,14 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "string_template", label: "String template" },
   { value: "lookup_table", label: "Lookup table" },
   { value: "json_path", label: "JSON path" },
+  { value: "currency_code", label: "Currency code" },
 ];
 
 interface Props {
   mapping: FieldMapping;
   sourceFields: TririgaField[];
+  assocFields?: TririgaField[];
+  assocFieldsLoading?: boolean;
   targetFields: KontractsField[];
   sourceLoading?: boolean;
   onChange: (updated: FieldMapping) => void;
@@ -34,12 +37,16 @@ interface Props {
 export function MappingRow({
   mapping,
   sourceFields,
+  assocFields = [],
+  assocFieldsLoading,
   targetFields,
   sourceLoading,
   onChange,
   onDelete,
   index,
 }: Props) {
+  const activeFields = mapping.use_associated ? assocFields : sourceFields;
+  const activeLoading = mapping.use_associated ? assocFieldsLoading : sourceLoading;
   const [expanded, setExpanded] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
 
@@ -50,13 +57,27 @@ export function MappingRow({
   const showExpandButton = mapping.transform_type !== "direct";
 
   return (
-    <div className={cn("rounded-md border bg-card", expanded && "ring-1 ring-primary/20")}>
+    <div className={cn(
+      "rounded-md border bg-card border-l-4",
+      mapping.use_associated ? "border-l-purple-400" : "border-l-blue-400",
+      expanded && "ring-1 ring-primary/20"
+    )}>
       <div className="flex items-center gap-2 p-3">
         {/* Drag handle */}
         <GripVertical className="h-4 w-4 flex-shrink-0 cursor-grab text-muted-foreground" />
 
         {/* Row number */}
         <span className="w-5 text-center text-xs text-muted-foreground">{index + 1}</span>
+
+        {/* BO type badge */}
+        <span className={cn(
+          "flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium",
+          mapping.use_associated
+            ? "bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300"
+            : "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
+        )}>
+          {mapping.use_associated ? "Assoc" : "Base"}
+        </span>
 
         {/* Source field — searchable combobox */}
         <div className="flex-1">
@@ -65,7 +86,7 @@ export function MappingRow({
               <Button
                 variant="outline"
                 role="combobox"
-                disabled={sourceLoading}
+                disabled={activeLoading}
                 className="h-8 w-full justify-between text-xs font-normal"
               >
                 {mapping.source_field ? (
@@ -80,7 +101,7 @@ export function MappingRow({
                     );
                   })()
                 ) : (
-                  <span className="text-muted-foreground">{sourceLoading ? "Loading fields..." : "Source field..."}</span>
+                  <span className="text-muted-foreground">{activeLoading ? "Loading fields..." : "Source field..."}</span>
                 )}
                 <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
               </Button>
@@ -90,7 +111,7 @@ export function MappingRow({
                 filter={(value, search) => {
                   // Search by field name (part after ||) and label — ignore section prefix
                   const fieldName = value.includes("||") ? value.split("||")[1] : value;
-                  const field = sourceFields.find((f) => f.name === fieldName);
+                  const field = activeFields.find((f) => f.name === fieldName);
                   const haystack = `${fieldName} ${field?.label ?? ""}`.toLowerCase();
                   return haystack.includes(search.toLowerCase()) ? 1 : 0;
                 }}
@@ -105,7 +126,7 @@ export function MappingRow({
                     — none —
                   </CommandItem>
                   {(() => {
-                    const grouped = sourceFields.reduce((acc, f) => {
+                    const grouped = activeFields.reduce((acc, f) => {
                       const sec = f.section || "General";
                       if (!acc[sec]) acc[sec] = [];
                       acc[sec].push(f);

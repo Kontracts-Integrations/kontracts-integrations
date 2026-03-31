@@ -56,6 +56,8 @@ def apply_transform(
             return _lookup_table(value, cfg)
         elif transform_type == "json_path":
             return _json_path(value, cfg, source)
+        elif transform_type == "currency_code":
+            return _currency_code(value, cfg)
         else:
             logger.warning(f"Unknown transform type '{transform_type}', using direct")
             return _direct(value, cfg)
@@ -83,21 +85,33 @@ def _date_format(value: Any, cfg: Dict) -> Optional[str]:
     Config:
         input_format  - strptime format (default: auto-detect via dateutil)
         output_format - strftime format (default: "%Y-%m-%d")
+
+    Also handles Unix timestamps in milliseconds (large integers like 1363302000000).
     """
     if value is None:
         return None
 
     from dateutil import parser as dateutil_parser
+    from datetime import datetime, timezone
 
     output_fmt = cfg.get("output_format", "%Y-%m-%d")
 
     try:
         input_fmt = cfg.get("input_format")
         if input_fmt:
-            from datetime import datetime
             dt = datetime.strptime(str(value), input_fmt)
         else:
-            dt = dateutil_parser.parse(str(value))
+            # Detect Unix millisecond timestamps (13-digit numbers)
+            try:
+                numeric = float(str(value).strip())
+                if numeric > 1_000_000_000_000:  # > year 2001 in ms
+                    dt = datetime.fromtimestamp(numeric / 1000, tz=timezone.utc)
+                elif numeric > 1_000_000_000:    # Unix seconds
+                    dt = datetime.fromtimestamp(numeric, tz=timezone.utc)
+                else:
+                    dt = dateutil_parser.parse(str(value))
+            except (ValueError, TypeError):
+                dt = dateutil_parser.parse(str(value))
 
         return dt.strftime(output_fmt)
     except Exception as e:
@@ -214,6 +228,49 @@ def _lookup_table(value: Any, cfg: Dict) -> Any:
 
     str_val = str(value)
     return table.get(str_val, table.get(value, default_val))
+
+
+def _currency_code(value: Any, cfg: Dict) -> Optional[str]:
+    """
+    Convert a currency name or symbol to a 3-letter ISO 4217 code.
+
+    Config:
+        default - value to return if no match (default: original value)
+    """
+    _NAME_TO_CODE = {
+        "us dollars": "USD", "united states dollar": "USD", "usd": "USD",
+        "canadian dollars": "CAD", "canadian dollar": "CAD", "cad": "CAD",
+        "euro": "EUR", "euros": "EUR", "eur": "EUR",
+        "british pounds": "GBP", "pound sterling": "GBP", "gbp": "GBP",
+        "australian dollars": "AUD", "australian dollar": "AUD", "aud": "AUD",
+        "japanese yen": "JPY", "yen": "JPY", "jpy": "JPY",
+        "chinese yuan": "CNY", "renminbi": "CNY", "cny": "CNY",
+        "indian rupees": "INR", "indian rupee": "INR", "inr": "INR",
+        "uae dirham": "AED", "dirham": "AED", "aed": "AED",
+        "swiss franc": "CHF", "swiss francs": "CHF", "chf": "CHF",
+        "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD",
+        "hong kong dollar": "HKD", "hong kong dollars": "HKD", "hkd": "HKD",
+        "mexican peso": "MXN", "mexican pesos": "MXN", "mxn": "MXN",
+        "brazilian real": "BRL", "brl": "BRL",
+        "south african rand": "ZAR", "rand": "ZAR", "zar": "ZAR",
+        "swedish krona": "SEK", "sek": "SEK",
+        "norwegian krone": "NOK", "nok": "NOK",
+        "danish krone": "DKK", "dkk": "DKK",
+        "new zealand dollar": "NZD", "nzd": "NZD",
+        "russian ruble": "RUB", "rub": "RUB",
+        "turkish lira": "TRY", "try": "TRY",
+        "korean won": "KRW", "krw": "KRW",
+    }
+    if value is None:
+        return cfg.get("default")
+    key = str(value).strip().lower()
+    result = _NAME_TO_CODE.get(key)
+    if result:
+        return result
+    # If already 3 chars and looks like a code, return uppercased
+    if len(key) == 3 and key.isalpha():
+        return key.upper()
+    return cfg.get("default", str(value))
 
 
 def _json_path(value: Any, cfg: Dict, source_record: Dict) -> Any:
