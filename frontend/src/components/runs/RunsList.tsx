@@ -9,6 +9,7 @@ interface Props {
   mappingFilter: string;
   onStatusFilterChange: (v: string) => void;
   onMappingFilterChange: (v: string) => void;
+  onSelect?: (runId: number) => void;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -24,9 +25,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function RunRow({ run, mappingName }: { run: SyncRun; mappingName: string }) {
+function RunRow({ run, mappingName, onSelect }: { run: SyncRun; mappingName: string; onSelect?: () => void }) {
   return (
-    <tr className="border-b transition-colors hover:bg-muted/50">
+    <tr
+      className="border-b transition-colors hover:bg-muted/50 cursor-pointer"
+      onClick={onSelect}
+    >
       <td className="p-3 text-sm font-medium">#{run.id}</td>
       <td className="p-3">
         <StatusBadge status={run.status} />
@@ -93,7 +97,7 @@ function ColumnFilter({
   );
 }
 
-export function RunsList({ runs, mappings, statusFilter, mappingFilter, onStatusFilterChange, onMappingFilterChange }: Props) {
+export function RunsList({ runs, mappings, statusFilter, mappingFilter, onStatusFilterChange, onMappingFilterChange, onSelect }: Props) {
   const mappingMap = Object.fromEntries(mappings.map((m) => [m.id, m.name]));
 
   const filtered = runs.filter((r) => {
@@ -151,6 +155,7 @@ export function RunsList({ runs, mappings, statusFilter, mappingFilter, onStatus
               key={run.id}
               run={run}
               mappingName={run.mapping_template_id ? (mappingMap[run.mapping_template_id] ?? `#${run.mapping_template_id}`) : "—"}
+              onSelect={() => onSelect?.(run.id)}
             />
           ))}
         </tbody>

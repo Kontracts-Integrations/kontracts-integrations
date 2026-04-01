@@ -47,7 +47,6 @@ class SyncService:
                 run_id, LogLevel.error, f"Sync run failed: {e}", "sync_service"
             )
             await self.db.flush()
-            raise
 
     async def _run_sync(self, run: SyncRun) -> None:
         run_id = run.id
@@ -228,6 +227,13 @@ class SyncService:
                     "sync_service",
                     extra={"record_id": record_id},
                 )
+
+            # Commit every 25 records so a restart preserves partial progress
+            if (i + 1) % 25 == 0:
+                run.success_count = success_count
+                run.failed_count = failed_count
+                run.skipped_count = skipped_count
+                await self.db.commit()
 
         # Update run totals
         run.success_count = success_count

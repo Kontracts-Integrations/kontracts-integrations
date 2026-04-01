@@ -109,6 +109,10 @@ class KontractsClient:
             resp = await http.post(
                 f"{self.base_url}{path}", headers=headers, json=data
             )
+            if resp.is_error:
+                logger.error(
+                    "POST %s → %s: %s", path, resp.status_code, resp.text
+                )
             resp.raise_for_status()
             return resp.json()
 

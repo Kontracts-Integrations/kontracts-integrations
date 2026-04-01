@@ -36,7 +36,7 @@ export default function DashboardPage() {
 
   return (
     <MainLayout title="Dashboard">
-      <div className="space-y-6">
+      <div className="flex-1 overflow-y-auto space-y-6">
         {/* Stats grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatsCard

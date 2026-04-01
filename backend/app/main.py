@@ -52,3 +52,33 @@ async def startup_event():
         logger.warning(
             "FERNET_KEY not set — credentials will not be encrypted properly"
         )
+    await _mark_orphaned_runs_failed()
+
+
+async def _mark_orphaned_runs_failed():
+    """Mark any pending/running runs as failed — they were killed by a restart."""
+    from datetime import datetime, timezone
+    from sqlalchemy import update as sql_update
+    from app.database import AsyncSessionLocal
+    from app.models.sync_run import RunStatus, SyncRun
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            sql_update(SyncRun)
+            .where(SyncRun.status.in_([RunStatus.pending, RunStatus.running]))
+            .values(
+                status=RunStatus.failed,
+                error_message="Run was interrupted by a server restart.",
+                completed_at=datetime.now(timezone.utc),
+            )
+            .returning(SyncRun.id)
+        )
+        orphaned_ids = [row[0] for row in result.fetchall()]
+        await db.commit()
+
+    if orphaned_ids:
+        logger.warning(
+            "Marked %d orphaned run(s) as failed on startup: %s",
+            len(orphaned_ids),
+            orphaned_ids,
+        )

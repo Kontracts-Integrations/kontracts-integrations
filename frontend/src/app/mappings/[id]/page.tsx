@@ -66,7 +66,7 @@ export default function MappingDetailPage() {
 
   return (
     <MainLayout title={template.name}>
-      <div className="flex h-full flex-col space-y-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex items-center">
           <Button variant="outline" size="sm" asChild>
             <Link href="/mappings">

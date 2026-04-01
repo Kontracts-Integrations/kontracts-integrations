@@ -143,7 +143,7 @@ async def _execute_sync_run(run_id: int) -> None:
         try:
             service = SyncService(db)
             await service.execute_run(run_id)
-            await db.commit()
         except Exception as e:
             logger.error(f"Background sync run {run_id} failed: {e}", exc_info=True)
-            await db.rollback()
+        finally:
+            await db.commit()

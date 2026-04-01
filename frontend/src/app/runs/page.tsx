@@ -37,7 +37,7 @@ export default function RunsPage() {
 
   return (
     <MainLayout title="Sync Runs">
-      <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4">
         {/* Controls */}
         <div className="flex items-center gap-3">
           <Button
@@ -70,6 +70,7 @@ export default function RunsPage() {
             mappingFilter={mappingFilter}
             onStatusFilterChange={setStatusFilter}
             onMappingFilterChange={setMappingFilter}
+            onSelect={setSelectedRunId}
           />
         )}
       </div>
