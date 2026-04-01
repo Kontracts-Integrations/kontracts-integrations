@@ -277,6 +277,10 @@ export const runsApi = {
     const r = await http.post<SyncRun>(`/runs/${runId}/retry`);
     return r.data;
   },
+  cancel: async (runId: number): Promise<SyncRun> => {
+    const r = await http.post<SyncRun>(`/runs/${runId}/cancel`);
+    return r.data;
+  },
 };
 
 // ──────────────────────────────────────────────

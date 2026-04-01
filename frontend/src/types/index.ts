@@ -51,7 +51,8 @@ export type TransformType =
   | "string_template"
   | "lookup_table"
   | "json_path"
-  | "currency_code";
+  | "currency_code"
+  | "lease_lookup";
 
 export interface FieldMapping {
   id: string;

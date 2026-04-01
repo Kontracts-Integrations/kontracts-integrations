@@ -20,6 +20,7 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "lookup_table", label: "Lookup table" },
   { value: "json_path", label: "JSON path" },
   { value: "currency_code", label: "Currency code" },
+  { value: "lease_lookup", label: "Lease lookup (TRIRIGA → Kontracts ID)" },
 ];
 
 interface Props {

@@ -14,6 +14,7 @@ class RunStatus(str, enum.Enum):
     running = "running"
     completed = "completed"
     failed = "failed"
+    stopped = "stopped"
 
 
 class RecordStatus(str, enum.Enum):

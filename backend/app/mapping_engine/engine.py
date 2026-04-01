@@ -27,6 +27,7 @@ class MappingEngine:
     def apply(
         self,
         source_record: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], List[str]]:
         """
         Apply all field mappings to a single source record.
@@ -62,6 +63,7 @@ class MappingEngine:
                     value=source_value,
                     config=transform_config,
                     source_record=source_record,
+                    context=context,
                 )
             except Exception as e:
                 msg = (

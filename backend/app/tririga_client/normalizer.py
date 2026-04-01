@@ -76,6 +76,38 @@ def normalize_query_response(obj: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def extract_dynamic_query_result(obj: Any):
+    """
+    Normalize a runDynamicQuery (or runDynamicQueryContinue) response.
+    Returns (records, continuation_token_string, total_results).
+    """
+    normalized = normalize_soap_response(obj)
+
+    if normalized is None:
+        return [], None, 0
+
+    # Unwrap <out> envelope
+    if isinstance(normalized, dict) and "out" in normalized:
+        normalized = normalized["out"]
+
+    token_string = None
+    total_results = 0
+
+    if isinstance(normalized, dict):
+        token_obj = normalized.get("continuationToken")
+        if isinstance(token_obj, dict):
+            token_string = token_obj.get("tokenString")
+
+        total_results = normalized.get("totalResults") or 0
+        try:
+            total_results = int(total_results)
+        except (TypeError, ValueError):
+            total_results = 0
+
+    records = normalize_dynamic_query_response(normalized)
+    return records, token_string, total_results
+
+
 def normalize_dynamic_query_response(obj: Any) -> List[Dict[str, Any]]:
     """
     Normalize the result of a TRIRIGA runDynamicQuery call into a list of records.

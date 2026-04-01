@@ -24,10 +24,19 @@ export default function RunsPage() {
     setMappingFilter("all");
   }
 
+  const cancelMutation = useMutation({
+    mutationFn: (runId: number) => runsApi.cancel(runId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["runs"] }),
+  });
+
   const { data: runs, isLoading, isRefetching } = useQuery({
     queryKey: ["runs"],
     queryFn: () => runsApi.list({ limit: 100 }),
-    refetchInterval: 10000,
+    refetchInterval: (query) => {
+      const data = query.state.data as typeof runs;
+      const hasRunning = data?.some((r) => r.status === "running");
+      return hasRunning ? 2000 : 10000;
+    },
   });
 
   const { data: mappings } = useQuery({
@@ -71,6 +80,7 @@ export default function RunsPage() {
             onStatusFilterChange={setStatusFilter}
             onMappingFilterChange={setMappingFilter}
             onSelect={setSelectedRunId}
+            onCancel={(runId) => cancelMutation.mutate(runId)}
           />
         )}
       </div>

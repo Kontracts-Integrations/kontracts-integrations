@@ -358,7 +358,16 @@ class TririgaClient:
         field_names: Optional[List[str]] = None,
         filter_condition: str = "",
         max_records: int = 500,
+        fetch_all: bool = False,
     ) -> List[Dict[str, Any]]:
+        """
+        Fetch records via runDynamicQuery, optionally paginating through all results
+        using the TRIRIGA continuationToken mechanism (runDynamicQueryContinue).
+
+        Args:
+            max_records: Max records for the initial page (default 500).
+            fetch_all:   If True, follow continuation tokens until all records are fetched.
+        """
         if self.demo_mode:
             from app.tririga_client.fixtures import get_demo_records
             return get_demo_records(module_name, object_type_name, max_records)
@@ -366,29 +375,32 @@ class TririgaClient:
         loop = asyncio.get_event_loop()
         try:
             client = await loop.run_in_executor(None, self._get_zeep_client)
-            def _call_dynamic_query():
-                ns_dto = "{http://dto.ws.tririga.com}"
-                ns_ws = "{http://ws.tririga.com}"
-                DisplayLabel = client.get_type(f"{ns_dto}DisplayLabel")
-                ArrayOfDisplayLabel = client.get_type(f"{ns_dto}ArrayOfDisplayLabel")
-                empty_sort = client.get_type(f"{ns_dto}ArrayOfFieldSortOrder")()
-                empty_filter = client.get_type(f"{ns_dto}ArrayOfFilter")()
-                empty_assoc_filter = client.get_type(f"{ns_dto}ArrayOfAssociationFilter")()
-                obj_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[object_type_name])
-                gui_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[])
 
-                # Build displayFields from mapped source field names
-                display_labels = []
-                for fname in (field_names or []):
-                    # Extract section and field name from section||fieldName format
-                    if "||" in fname:
-                        section, clean = fname.split("||", 1)
-                    else:
-                        section, clean = "", fname
-                    if clean:
-                        display_labels.append(DisplayLabel(fieldName=clean, label=clean, sectionName=section))
-                display_fields = ArrayOfDisplayLabel(DisplayLabel=display_labels) if display_labels else ArrayOfDisplayLabel()
+            ns_dto = "{http://dto.ws.tririga.com}"
+            ns_ws = "{http://ws.tririga.com}"
+            DisplayLabel = client.get_type(f"{ns_dto}DisplayLabel")
+            ArrayOfDisplayLabel = client.get_type(f"{ns_dto}ArrayOfDisplayLabel")
+            ContinuationToken = client.get_type(f"{ns_dto}ContinuationToken")
+            empty_sort = client.get_type(f"{ns_dto}ArrayOfFieldSortOrder")()
+            empty_filter = client.get_type(f"{ns_dto}ArrayOfFilter")()
+            empty_assoc_filter = client.get_type(f"{ns_dto}ArrayOfAssociationFilter")()
+            obj_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[object_type_name])
+            gui_names = client.get_type(f"{ns_ws}ArrayOfString")(string=[])
 
+            display_labels = []
+            for fname in (field_names or []):
+                if "||" in fname:
+                    section, clean = fname.split("||", 1)
+                else:
+                    section, clean = "", fname
+                if clean:
+                    display_labels.append(DisplayLabel(fieldName=clean, label=clean, sectionName=section))
+            display_fields = ArrayOfDisplayLabel(DisplayLabel=display_labels) if display_labels else ArrayOfDisplayLabel()
+
+            from app.tririga_client.normalizer import extract_dynamic_query_result
+
+            # Initial query
+            def _initial_call():
                 return client.service.runDynamicQuery(
                     projectName="",
                     moduleName=module_name,
@@ -406,9 +418,45 @@ class TririgaClient:
                     maximumResultCount=max_records,
                 )
 
-            result = await loop.run_in_executor(None, _call_dynamic_query)
-            from app.tririga_client.normalizer import normalize_dynamic_query_response
-            return normalize_dynamic_query_response(result)
+            result = await loop.run_in_executor(None, _initial_call)
+            records, token, total = extract_dynamic_query_result(result)
+
+            logger.info(
+                f"runDynamicQuery: got {len(records)} records, totalResults={total}, "
+                f"token={'yes' if token else 'no'}"
+            )
+
+            # Follow continuation tokens if fetch_all is requested
+            if fetch_all and token:
+                while token:
+                    token_str = token
+
+                    def _continue_call(t=token_str):
+                        return client.service.runDynamicQueryContinue(
+                            continuationToken=ContinuationToken(tokenString=t)
+                        )
+
+                    try:
+                        cont_result = await loop.run_in_executor(None, _continue_call)
+                        page_records, token, _ = extract_dynamic_query_result(cont_result)
+                    except Exception as cont_err:
+                        logger.warning(
+                            f"runDynamicQueryContinue failed after {len(records)} records: {cont_err}. "
+                            f"Returning partial results."
+                        )
+                        break
+
+                    if not page_records:
+                        break
+
+                    records.extend(page_records)
+                    logger.info(
+                        f"runDynamicQueryContinue: got {len(page_records)} more records "
+                        f"(total so far: {len(records)}/{total})"
+                    )
+
+            return records
+
         except Exception as e:
             detail = getattr(e, "detail", None) or getattr(e, "message", None) or ""
             logger.error(f"runDynamicQuery failed for {module_name}/{object_type_name}: {e} | detail: {detail}")

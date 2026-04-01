@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.lease_mapping import LeaseMapping
 from app.models.log_entry import LogEntry, LogLevel
 from app.models.mapping import MappingTemplate, MappingVersion
 from app.models.sync_run import RecordStatus, RunStatus, SyncRecord, SyncRun
@@ -91,6 +92,7 @@ class SyncService:
             field_names=source_field_names,
             filter_condition="",
             max_records=500,
+            fetch_all=False,
         )
 
         run.total_records = len(records)
@@ -125,6 +127,21 @@ class SyncService:
                     "kontracts_client",
                 )
 
+        # Pre-load lease_mappings for deduplication check and lease_lookup transform
+        existing_result = await self.db.execute(
+            select(LeaseMapping.tririga_record_id, LeaseMapping.kontracts_id)
+        )
+        lease_rows = existing_result.fetchall()
+        already_synced = {row[0] for row in lease_rows}
+        lease_map = {row[0]: row[1] for row in lease_rows}
+        engine_context = {"lease_mappings": lease_map}
+
+        await self._log(
+            run_id, LogLevel.info,
+            f"{len(already_synced)} records already synced — will skip duplicates",
+            "sync_service",
+        )
+
         # Process each record
         success_count = 0
         failed_count = 0
@@ -138,9 +155,14 @@ class SyncService:
                 source_record.get("recordId", f"record_{i}"))))
             )
 
+            # Skip if already synced
+            if record_id in already_synced:
+                skipped_count += 1
+                continue
+
             try:
                 # Apply mapping
-                mapped_payload, warnings = engine.apply(source_record)
+                mapped_payload, warnings = engine.apply(source_record, context=engine_context)
 
                 for warning in warnings:
                     await self._log(
@@ -185,9 +207,17 @@ class SyncService:
                     payload=mapped_payload,
                 )
 
-                kontracts_id = str(
-                    result.get("id", result.get("lease_id", "unknown"))
-                )
+                kontracts_id = str(result.get("id", "unknown"))
+                tririga_lease_id = str(result.get("lease_id", ""))
+                tririga_record_id = str(result.get("document_id", record_id))
+
+                # Persist the ID mapping to lease_mappings
+                self.db.add(LeaseMapping(
+                    tririga_lease_id=tririga_lease_id,
+                    tririga_record_id=tririga_record_id,
+                    kontracts_id=kontracts_id,
+                ))
+                await self.db.flush()
 
                 await self._save_record(
                     run_id=run_id,

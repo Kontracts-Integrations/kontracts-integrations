@@ -67,7 +67,7 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
             value={String(local.output_format ?? "%Y-%m-%d")}
             onChange={(e) => update("output_format", e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">e.g. %Y-%m-%d</p>
+          <p className="text-xs text-muted-foreground">Date: %Y-%m-%d · DateTime: %Y-%m-%dT%H:%M:%S</p>
         </div>
       </div>
     );
@@ -155,22 +155,53 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
   }
 
   if (transformType === "lookup_table") {
+    const isDynamic = local.dynamic_source === "lease_mappings";
     const tableStr = local.table ? JSON.stringify(local.table, null, 2) : "{}";
     return (
-      <div className="space-y-2">
-        <Label className="text-xs">Lookup Table (JSON)</Label>
-        <textarea
-          className="h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-          defaultValue={tableStr}
-          onChange={(e) => {
-            try {
-              const parsed = JSON.parse(e.target.value);
-              update("table", parsed);
-            } catch {
-              // ignore parse errors while typing
-            }
-          }}
-        />
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Source</Label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${!isDynamic ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background text-muted-foreground hover:text-foreground"}`}
+              onClick={() => update("dynamic_source", undefined)}
+            >
+              Static JSON
+            </button>
+            <button
+              type="button"
+              className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${isDynamic ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background text-muted-foreground hover:text-foreground"}`}
+              onClick={() => update("dynamic_source", "lease_mappings")}
+            >
+              Lease Mappings (DB)
+            </button>
+          </div>
+        </div>
+
+        {isDynamic ? (
+          <p className="text-xs text-muted-foreground">
+            Looks up the value in the <strong>lease_mappings</strong> table at runtime.
+            Use <code>triRecordIdSY</code> as the source field to resolve the Kontracts ID.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            <Label className="text-xs">Lookup Table (JSON)</Label>
+            <textarea
+              className="h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              defaultValue={tableStr}
+              onChange={(e) => {
+                try {
+                  const parsed = JSON.parse(e.target.value);
+                  update("table", parsed);
+                } catch {
+                  // ignore parse errors while typing
+                }
+              }}
+            />
+          </div>
+        )}
+
         <div className="space-y-1">
           <Label className="text-xs">Default (if no match)</Label>
           <Input
@@ -199,6 +230,27 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
           <Input
             className="h-8 text-xs"
             placeholder="N/A"
+            value={String(local.default ?? "")}
+            onChange={(e) => update("default", e.target.value || undefined)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (transformType === "lease_lookup") {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Looks up the Kontracts ID from the <strong>lease_mappings</strong> table using
+          the source field value as the TRIRIGA record ID (<code>triRecordIdSY</code>).
+          No configuration needed — the lookup table is loaded automatically at runtime.
+        </p>
+        <div className="space-y-1">
+          <Label className="text-xs">Default (if no match found)</Label>
+          <Input
+            className="h-8 text-xs"
+            placeholder="leave blank to return null"
             value={String(local.default ?? "")}
             onChange={(e) => update("default", e.target.value || undefined)}
           />

@@ -105,6 +105,7 @@ class KontractsClient:
 
     async def _post(self, path: str, data: Dict) -> Any:
         headers = await self._headers()
+        logger.info("POST %s payload: %s", path, data)
         async with httpx.AsyncClient(timeout=60) as http:
             resp = await http.post(
                 f"{self.base_url}{path}", headers=headers, json=data
