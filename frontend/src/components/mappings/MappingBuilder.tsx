@@ -254,235 +254,147 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   if (saveRef) saveRef.current = handleSaveMappings;
 
   return (
-    <div className="flex h-full flex-col space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {/* Header settings */}
-      <div className="rounded-lg border bg-card p-4 space-y-4">
-        <div className="flex items-center justify-between border-b pb-3">
-          <h2 className="text-base font-semibold text-muted-foreground">Details</h2>
-          <Button size="sm" onClick={handleDetailsSave} disabled={saving}>
-            {saving ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : isEditing ? (
-              <Save className="mr-1 h-4 w-4" />
-            ) : (
-              <Pencil className="mr-1 h-4 w-4" />
+      <div className="rounded-lg border bg-card px-4 py-2.5">
+        {isEditing ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b pb-2">
+              <h2 className="text-sm font-semibold text-muted-foreground">Details</h2>
+              <Button size="sm" onClick={handleDetailsSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+                Save
+              </Button>
+            </div>
+
+            {/* Name */}
+            <div className="space-y-1">
+              <Label className="text-xs">Mapping Template Name</Label>
+              <Input className="h-8 text-xs max-w-sm" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+
+            {/* Connections + Endpoint */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Source Connection</Label>
+                <Select value={sourceConnId ? String(sourceConnId) : "__default__"} onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Default (env)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Default (from env)</SelectItem>
+                    {sourceConns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Kontracts Connection</Label>
+                <Select value={targetConnId ? String(targetConnId) : "__default__"} onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Default (env)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Default (from env)</SelectItem>
+                    {kontractsConns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Kontracts Endpoint</Label>
+                <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select endpoint..." /></SelectTrigger>
+                  <SelectContent>
+                    {endpoints.filter((e) => e.has_request_body).map((e) => (
+                      <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
+                        <span className="font-mono text-xs">{e.method}</span> <span>{e.path}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* TRIRIGA Module + BO */}
+            <div className="grid grid-cols-2 gap-3 border-l-4 border-l-blue-400 pl-3 rounded-sm">
+              <div className="space-y-1">
+                <Label className="text-xs">TRIRIGA Module</Label>
+                <Select value={sourceModule} onValueChange={(v) => { setSourceModule(v); setSourceObject(""); setSourceObjectId(undefined); }} disabled={fetchAssociatedObjects}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select TRIRIGA Module..." /></SelectTrigger>
+                  <SelectContent>{modules.map((m) => <SelectItem key={m.name} value={m.name}>{m.label ?? m.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">TRIRIGA Business Object</Label>
+                <Select value={sourceObject} onValueChange={(v) => { setSourceObject(v); const bo = businessObjects.find((b) => b.name === v); setSourceObjectId(bo?.id ?? undefined); setAssocModule(""); setAssocObject(""); setAssocString(""); }} disabled={!sourceModule || boLoading || fetchAssociatedObjects}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."} /></SelectTrigger>
+                  <SelectContent>{businessObjects.map((bo) => <SelectItem key={bo.name} value={bo.name}>{bo.label ?? bo.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Fetch Associated Objects */}
+            <div className={cn("flex items-center gap-2 border-l-4 pl-3 rounded-sm transition-colors", fetchAssociatedObjects ? "border-l-purple-400" : "border-l-transparent")}>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                <input type="checkbox" className="h-3.5 w-3.5 accent-primary" checked={fetchAssociatedObjects} onChange={(e) => { setFetchAssociatedObjects(e.target.checked); if (!e.target.checked) { setAssocModule(""); setAssocObject(""); setAssocString(""); setMappings((prev) => prev.filter((m) => !m.use_associated)); } }} />
+                Fetch Associated Objects?
+              </label>
+            </div>
+
+            {fetchAssociatedObjects && (
+              <div className="grid grid-cols-3 gap-3 border-l-4 border-l-purple-400 pl-3 rounded-sm">
+                <div className="space-y-1">
+                  <Label className="text-xs">Associated TRIRIGA Module</Label>
+                  <Select value={assocModule} onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }} disabled={assocLoading}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={assocLoading ? "Loading..." : "Select Associated Module..."} /></SelectTrigger>
+                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocModuleOptions.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Associated TRIRIGA Business Object</Label>
+                  <Select value={assocObject} onValueChange={(v) => { setAssocObject(v); setAssocString(""); }} disabled={!assocModule}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."} /></SelectTrigger>
+                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocObjectOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Association String</Label>
+                  <Select value={assocString} onValueChange={setAssocString} disabled={!assocObject}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!assocObject ? "Select Associated Business Object first..." : "Select Association String..."} /></SelectTrigger>
+                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocStringOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
             )}
-            {isEditing ? "Save" : "Update"}
-          </Button>
-        </div>
-        {/* Row 1: Mapping Template Name */}
-        <div className="space-y-1">
-          <Label className="text-xs">Mapping Template Name</Label>
-          <Input
-            className="h-8 text-xs max-w-sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!isEditing}
-          />
-        </div>
-
-        {/* Row 2: Source Connection, Kontracts Connection, Kontracts Endpoint, Method */}
-        <div className="grid grid-cols-4 gap-4">
-          <div className="space-y-1">
-            <Label className="text-xs">Source Connection</Label>
-            <Select
-              value={sourceConnId ? String(sourceConnId) : "__default__"}
-              onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
-              disabled={!isEditing}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Default (env)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__default__">Default (from env)</SelectItem>
-                {sourceConns.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Kontracts Connection</Label>
-            <Select
-              value={targetConnId ? String(targetConnId) : "__default__"}
-              onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}
-              disabled={!isEditing}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Default (env)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__default__">Default (from env)</SelectItem>
-                {kontractsConns.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Kontracts Endpoint</Label>
-            <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint} disabled={!isEditing}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Select endpoint..." />
-              </SelectTrigger>
-              <SelectContent>
-                {endpoints
-                  .filter((e) => e.has_request_body)
-                  .map((e) => (
-                    <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
-                      <span className="font-mono text-xs">{e.method}</span>{" "}
-                      <span>{e.path}</span>
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Method</Label>
-            <Select value={kontractsMethod} onValueChange={setKontractsMethod} disabled={!isEditing}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["POST", "PUT", "PATCH"].map((m) => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Row 3: TRIRIGA Module, Business Object */}
-        <div className="grid grid-cols-2 gap-4 border-l-4 border-l-blue-400 pl-3 rounded-sm">
-          <div className="space-y-1">
-            <Label className="text-xs">TRIRIGA Module</Label>
-            <Select
-              value={sourceModule}
-              onValueChange={(v) => {
-                setSourceModule(v);
-                setSourceObject("");
-                setSourceObjectId(undefined);
-              }}
-              disabled={!isEditing || fetchAssociatedObjects}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Select TRIRIGA Module..." />
-              </SelectTrigger>
-              <SelectContent>
-                {modules.map((m) => (
-                  <SelectItem key={m.name} value={m.name}>{m.label ?? m.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">TRIRIGA Business Object</Label>
-            <Select
-              value={sourceObject}
-              onValueChange={(v) => {
-                setSourceObject(v);
-                const bo = businessObjects.find((b) => b.name === v);
-                setSourceObjectId(bo?.id ?? undefined);
-                setAssocModule("");
-                setAssocObject("");
-                setAssocString("");
-              }}
-              disabled={!isEditing || !sourceModule || boLoading || fetchAssociatedObjects}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."} />
-              </SelectTrigger>
-              <SelectContent>
-                {businessObjects.map((bo) => (
-                  <SelectItem key={bo.name} value={bo.name}>{bo.label ?? bo.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Row 4: Fetch Associated Objects */}
-        <div className={cn("flex items-center gap-2 border-l-4 pl-3 rounded-sm transition-colors", fetchAssociatedObjects ? "border-l-purple-400" : "border-l-transparent")}>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 accent-primary"
-              checked={fetchAssociatedObjects}
-              onChange={(e) => {
-                setFetchAssociatedObjects(e.target.checked);
-                if (!e.target.checked) {
-                  setAssocModule("");
-                  setAssocObject("");
-                  setAssocString("");
-                  setMappings((prev) => prev.filter((m) => !m.use_associated));
-                }
-              }}
-              disabled={!isEditing}
-            />
-            Fetch Associated Objects?
-          </label>
-        </div>
-
-        {/* Row 5: Associated object selectors — visible only when checkbox is checked */}
-        {fetchAssociatedObjects && (
-          <div className="grid grid-cols-3 gap-4 border-l-4 border-l-purple-400 pl-3 rounded-sm">
-            <div className="space-y-1">
-              <Label className="text-xs">Associated TRIRIGA Module</Label>
-              <Select
-                value={assocModule}
-                onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }}
-                disabled={!isEditing || assocLoading}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder={assocLoading ? "Loading..." : "Select Associated Module..."} />
-                </SelectTrigger>
-                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
-                  {assocModuleOptions.map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        ) : (
+          /* Collapsed summary row */
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="font-medium text-sm truncate">{name}</span>
+              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                {sourceModule && (
+                  <span className="rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5">
+                    {sourceObject || sourceModule}
+                  </span>
+                )}
+                {fetchAssociatedObjects && assocObject && (
+                  <span className="rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-1.5 py-0.5">
+                    + {assocObject}
+                  </span>
+                )}
+                {kontractsEndpoint && (
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
+                    {kontractsMethod} {kontractsEndpoint}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Associated TRIRIGA Business Object</Label>
-              <Select
-                value={assocObject}
-                onValueChange={(v) => { setAssocObject(v); setAssocString(""); }}
-                disabled={!isEditing || !assocModule}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."} />
-                </SelectTrigger>
-                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
-                  {assocObjectOptions.map((o) => (
-                    <SelectItem key={o} value={o}>{o}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Association String</Label>
-              <Select
-                value={assocString}
-                onValueChange={setAssocString}
-                disabled={!isEditing || !assocObject}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder={!assocObject ? "Select Associated Business Object first..." : "Select Association String..."} />
-                </SelectTrigger>
-                <SelectContent position="popper" className="max-h-72 overflow-y-auto">
-                  {assocStringOptions.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Button size="sm" variant="ghost" onClick={handleDetailsSave} disabled={saving} className="flex-shrink-0 text-xs h-7">
+              <Pencil className="mr-1 h-3.5 w-3.5" />
+              Edit Details
+            </Button>
           </div>
         )}
       </div>
 
       {/* Main builder tabs */}
-      <Tabs defaultValue="builder" className="flex flex-1 flex-col overflow-hidden">
+      <Tabs defaultValue="builder" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="builder">Field Mappings ({mappings.length})</TabsTrigger>
@@ -512,8 +424,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
           </div>
         </div>
 
-        <TabsContent value="builder" className="mt-4 flex-1 overflow-auto">
-          <div className="space-y-2">
+        <TabsContent value="builder" className="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <div className="space-y-3">
             {mappings.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
                 No field mappings yet. Click "Add Row" to create your first mapping.

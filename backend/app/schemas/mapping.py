@@ -20,6 +20,7 @@ class FieldMapping(BaseModel):
         description="Transform-specific configuration",
     )
     is_required: bool = Field(default=False)
+    use_associated: bool = Field(default=False)
     description: Optional[str] = None
 
 

@@ -62,22 +62,13 @@ export function MappingRow({
       mapping.use_associated ? "border-l-purple-400" : "border-l-blue-400",
       expanded && "ring-1 ring-primary/20"
     )}>
-      <div className="flex items-center gap-2 p-3">
+      <div className="flex items-center gap-3 p-2">
         {/* Drag handle */}
         <GripVertical className="h-4 w-4 flex-shrink-0 cursor-grab text-muted-foreground" />
 
         {/* Row number */}
         <span className="w-5 text-center text-xs text-muted-foreground">{index + 1}</span>
 
-        {/* BO type badge */}
-        <span className={cn(
-          "flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium",
-          mapping.use_associated
-            ? "bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300"
-            : "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
-        )}>
-          {mapping.use_associated ? "Assoc" : "Base"}
-        </span>
 
         {/* Source field — searchable combobox */}
         <div className="flex-1">
@@ -143,8 +134,7 @@ export function MappingRow({
                               onSelect={() => { update({ source_field: compositeValue }); setSourceOpen(false); }}
                             >
                               <span className="font-mono">{f.name}</span>
-                              {f.label !== f.name && <span className="ml-1 text-muted-foreground">{f.label}</span>}
-                              <span className="ml-1 text-muted-foreground">({f.type})</span>
+                              {f.label !== f.name && <span className="ml-1 text-muted-foreground">({f.label})</span>}
                             </CommandItem>
                           );
                         })}
@@ -203,7 +193,6 @@ export function MappingRow({
                 <SelectItem key={f.name} value={f.name}>
                   <span className="font-mono">{f.name}</span>
                   {f.required && <span className="ml-1 text-red-500">*</span>}
-                  <span className="ml-2 text-muted-foreground">({f.type})</span>
                 </SelectItem>
               ))}
             </SelectContent>
