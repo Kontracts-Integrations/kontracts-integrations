@@ -18,38 +18,38 @@ DEMO_MODULES = [
 
 DEMO_FIELDS_BY_MODULE: Dict[str, List[Dict[str, Any]]] = {
     "triRealEstateLease": [
-        {"name": "triRecordIdSY", "label": "Record ID", "type": "number", "required": True},
-        {"name": "triNameTX", "label": "Lease Name", "type": "string", "required": True},
-        {"name": "triLeaseTypeCL", "label": "Lease Type", "type": "string", "required": False},
-        {"name": "triCommenceDateDT", "label": "Commencement Date", "type": "date", "required": True},
-        {"name": "triExpirationDateDT", "label": "Expiration Date", "type": "date", "required": True},
-        {"name": "triLeasedAreaNU", "label": "Leased Area (SF)", "type": "number", "required": False},
-        {"name": "triBaseRentAmountNU", "label": "Base Rent Amount", "type": "currency", "required": False},
-        {"name": "triRentFrequencyCL", "label": "Rent Frequency", "type": "string", "required": False},
-        {"name": "triCurrencyCL", "label": "Currency", "type": "string", "required": False},
-        {"name": "triDiscountRateNU", "label": "Discount Rate (%)", "type": "number", "required": False},
-        {"name": "triLandlordTX", "label": "Landlord Name", "type": "string", "required": False},
-        {"name": "triTenantTX", "label": "Tenant Name", "type": "string", "required": False},
-        {"name": "triStatusCL", "label": "Status", "type": "string", "required": False},
-        {"name": "triAddressTX", "label": "Property Address", "type": "string", "required": False},
-        {"name": "triCityTX", "label": "City", "type": "string", "required": False},
-        {"name": "triStateProvinceListTX", "label": "State/Province", "type": "string", "required": False},
-        {"name": "triCountryCL", "label": "Country", "type": "string", "required": False},
-        {"name": "triPostalCodeTX", "label": "Postal Code", "type": "string", "required": False},
-        {"name": "triRenewalOptionsBL", "label": "Has Renewal Options", "type": "boolean", "required": False},
-        {"name": "triRenewalTermNU", "label": "Renewal Term (months)", "type": "number", "required": False},
-        {"name": "triPurchaseOptionBL", "label": "Has Purchase Option", "type": "boolean", "required": False},
-        {"name": "triSubleaseOptionBL", "label": "Has Sublease Option", "type": "boolean", "required": False},
-        {"name": "triCreatedByTX", "label": "Created By", "type": "string", "required": False},
-        {"name": "triCreatedDateDT", "label": "Created Date", "type": "datetime", "required": False},
-        {"name": "triModifiedDateDT", "label": "Modified Date", "type": "datetime", "required": False},
+        {"name": "triRecordIdSY", "label": "Record ID", "type": "number", "required": True, "section": "General"},
+        {"name": "triNameTX", "label": "Lease Name", "type": "string", "required": True, "section": "General"},
+        {"name": "triLeaseTypeCL", "label": "Lease Type", "type": "string", "required": False, "section": "General"},
+        {"name": "triStatusCL", "label": "Status", "type": "string", "required": False, "section": "General"},
+        {"name": "triCommenceDateDT", "label": "Commencement Date", "type": "date", "required": True, "section": "Dates"},
+        {"name": "triExpirationDateDT", "label": "Expiration Date", "type": "date", "required": True, "section": "Dates"},
+        {"name": "triCreatedDateDT", "label": "Created Date", "type": "datetime", "required": False, "section": "Dates"},
+        {"name": "triModifiedDateDT", "label": "Modified Date", "type": "datetime", "required": False, "section": "Dates"},
+        {"name": "triBaseRentAmountNU", "label": "Base Rent Amount", "type": "currency", "required": False, "section": "Financial"},
+        {"name": "triRentFrequencyCL", "label": "Rent Frequency", "type": "string", "required": False, "section": "Financial"},
+        {"name": "triCurrencyCL", "label": "Currency", "type": "string", "required": False, "section": "Financial"},
+        {"name": "triDiscountRateNU", "label": "Discount Rate (%)", "type": "number", "required": False, "section": "Financial"},
+        {"name": "triLeasedAreaNU", "label": "Leased Area (SF)", "type": "number", "required": False, "section": "Financial"},
+        {"name": "triAddressTX", "label": "Property Address", "type": "string", "required": False, "section": "Location"},
+        {"name": "triCityTX", "label": "City", "type": "string", "required": False, "section": "Location"},
+        {"name": "triStateProvinceListTX", "label": "State/Province", "type": "string", "required": False, "section": "Location"},
+        {"name": "triCountryCL", "label": "Country", "type": "string", "required": False, "section": "Location"},
+        {"name": "triPostalCodeTX", "label": "Postal Code", "type": "string", "required": False, "section": "Location"},
+        {"name": "triLandlordTX", "label": "Landlord Name", "type": "string", "required": False, "section": "Parties"},
+        {"name": "triTenantTX", "label": "Tenant Name", "type": "string", "required": False, "section": "Parties"},
+        {"name": "triCreatedByTX", "label": "Created By", "type": "string", "required": False, "section": "Parties"},
+        {"name": "triRenewalOptionsBL", "label": "Has Renewal Options", "type": "boolean", "required": False, "section": "Options"},
+        {"name": "triRenewalTermNU", "label": "Renewal Term (months)", "type": "number", "required": False, "section": "Options"},
+        {"name": "triPurchaseOptionBL", "label": "Has Purchase Option", "type": "boolean", "required": False, "section": "Options"},
+        {"name": "triSubleaseOptionBL", "label": "Has Sublease Option", "type": "boolean", "required": False, "section": "Options"},
     ],
     "triBuilding": [
-        {"name": "triRecordIdSY", "label": "Record ID", "type": "number", "required": True},
-        {"name": "triNameTX", "label": "Building Name", "type": "string", "required": True},
-        {"name": "triAddressTX", "label": "Address", "type": "string", "required": False},
-        {"name": "triGrossAreaNU", "label": "Gross Area (SF)", "type": "number", "required": False},
-        {"name": "triYearBuiltNU", "label": "Year Built", "type": "number", "required": False},
+        {"name": "triRecordIdSY", "label": "Record ID", "type": "number", "required": True, "section": "General"},
+        {"name": "triNameTX", "label": "Building Name", "type": "string", "required": True, "section": "General"},
+        {"name": "triAddressTX", "label": "Address", "type": "string", "required": False, "section": "Location"},
+        {"name": "triGrossAreaNU", "label": "Gross Area (SF)", "type": "number", "required": False, "section": "Details"},
+        {"name": "triYearBuiltNU", "label": "Year Built", "type": "number", "required": False, "section": "Details"},
     ],
 }
 
@@ -158,6 +158,39 @@ DEMO_WSDL_STRUCTURE = {
 }
 
 
+DEMO_BUSINESS_OBJECTS_BY_MODULE: Dict[str, List[Dict[str, Any]]] = {
+    "triRealEstateLease": [
+        {"name": "triRealEstateLease", "label": "Real Estate Lease", "id": 1001},
+        {"name": "triRealEstateLeaseArmLength", "label": "Arm Length Lease", "id": 1002},
+        {"name": "triRealEstateLeaseAbstract", "label": "Lease Abstract", "id": 1003},
+    ],
+    "triBuilding": [
+        {"name": "triBuilding", "label": "Building", "id": 2001},
+        {"name": "triBuildingFloor", "label": "Building Floor", "id": 2002},
+    ],
+    "triContract": [
+        {"name": "triContract", "label": "Contract", "id": 3001},
+        {"name": "triContractRevision", "label": "Contract Revision", "id": 3002},
+    ],
+    "triPeople": [
+        {"name": "triPeople", "label": "People", "id": 4001},
+        {"name": "triEmployee", "label": "Employee", "id": 4002},
+    ],
+    "triWorkTask": [
+        {"name": "triWorkTask", "label": "Work Task", "id": 5001},
+        {"name": "triWorkOrder", "label": "Work Order", "id": 5002},
+    ],
+}
+
+
+def get_demo_business_objects(module_name: str) -> List[Dict[str, Any]]:
+    # Fall back to a single entry matching the module name if not found
+    return DEMO_BUSINESS_OBJECTS_BY_MODULE.get(
+        module_name,
+        [{"name": module_name, "label": module_name, "id": None}],
+    )
+
+
 def get_demo_fields(module_name: str):
     return DEMO_FIELDS_BY_MODULE.get(
         module_name,
@@ -167,3 +200,27 @@ def get_demo_fields(module_name: str):
 
 def get_demo_records(module_name: str, query_name: str, max_records: int):
     return DEMO_RECORDS[:max_records]
+
+
+DEMO_ASSOCIATED_OBJECTS: Dict[str, List[Dict[str, Any]]] = {
+    "triRealEstateLease": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triLeaseContactAssoc"},
+        {"module_name": "triLocation", "object_type_name": "triBuilding", "association_name": "triLeaseLocationAssoc"},
+        {"module_name": "triContract", "object_type_name": "triContract", "association_name": "triLeaseContractAssoc"},
+    ],
+    "triBuilding": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triBuildingContactAssoc"},
+        {"module_name": "triLocation", "object_type_name": "triFloor", "association_name": "triBuildingFloorAssoc"},
+    ],
+    "triContract": [
+        {"module_name": "triPeople", "object_type_name": "triPeople", "association_name": "triContractContactAssoc"},
+        {"module_name": "triRealEstateLease", "object_type_name": "triRealEstateLease", "association_name": "triContractLeaseAssoc"},
+    ],
+}
+
+
+def get_demo_associated_objects(module_name: str, object_type_name: str) -> List[Dict[str, Any]]:
+    return DEMO_ASSOCIATED_OBJECTS.get(
+        object_type_name,
+        DEMO_ASSOCIATED_OBJECTS.get(module_name, []),
+    )

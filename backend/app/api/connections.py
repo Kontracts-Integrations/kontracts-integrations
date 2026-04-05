@@ -78,7 +78,14 @@ async def update_connection(
     if payload.is_active is not None:
         conn.is_active = payload.is_active
     if payload.credentials is not None:
-        conn.encrypted_credentials = encrypt_credentials(payload.credentials)
+        existing_creds = {}
+        if conn.encrypted_credentials:
+            try:
+                existing_creds = decrypt_credentials(conn.encrypted_credentials)
+            except Exception:
+                pass
+        merged = {**existing_creds, **payload.credentials}
+        conn.encrypted_credentials = encrypt_credentials(merged)
     conn.updated_at = datetime.now(timezone.utc)
 
     await db.flush()

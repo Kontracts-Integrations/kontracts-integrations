@@ -127,7 +127,7 @@ export default function ConnectionsPage() {
 
   return (
     <MainLayout title="Connections">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-4xl flex-1 overflow-y-auto space-y-6">
         <div>
           <h2 className="text-xl font-semibold">Connection Settings</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -218,7 +218,7 @@ export default function ConnectionsPage() {
             ) : null}
             <Card>
               <CardHeader>
-                <CardTitle>{kontractsConns.length > 0 ? "Add Another Kontracts Connection" : "Configure Kontracts Connection"}</CardTitle>
+                <CardTitle>Configure Kontracts Connection</CardTitle>
                 <CardDescription>Connect to the Kontracts REST API using Auth0 client credentials OAuth2 flow.</CardDescription>
               </CardHeader>
               <CardContent><KontractsConnectionForm /></CardContent>

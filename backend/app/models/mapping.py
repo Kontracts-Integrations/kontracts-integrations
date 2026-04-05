@@ -26,10 +26,16 @@ class MappingTemplate(Base):
         nullable=True,
     )
 
+    source_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_query: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     kontracts_endpoint: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     kontracts_method: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    fetch_associated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assoc_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    assoc_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    assoc_string: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -60,6 +66,7 @@ class MappingTemplate(Base):
         back_populates="template",
         lazy="select",
         uselist=True,
+        cascade="all, delete-orphan",
     )
     sync_runs: Mapped[list] = relationship(
         "SyncRun",

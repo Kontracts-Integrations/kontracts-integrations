@@ -10,6 +10,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Module-level token cache: keyed by (client_id, audience) → (access_token, expires_at)
+# Shared across all KontractsClient instances so tokens survive request boundaries.
+_TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, float]] = {}
+
 _DEMO_LEASES = [
     {
         "id": "lease_001",
@@ -51,14 +55,18 @@ class KontractsClient:
         self.audience = audience
         self.demo_mode = demo_mode
 
-        self._access_token: Optional[str] = None
-        self._token_expires_at: float = 0.0
-
     async def _get_access_token(self) -> str:
-        if self._access_token and time.time() < self._token_expires_at - 60:
-            return self._access_token
+        cache_key = (self.client_id, self.audience)
+        cached = _TOKEN_CACHE.get(cache_key)
+        if cached:
+            token, expires_at = cached
+            if time.time() < expires_at - 60:
+                return token
 
-        token_url = f"https://{self.auth0_domain}/oauth/token"
+        if not self.auth0_domain:
+            raise ValueError("Auth0 domain is not configured. Please update the connection with a valid Auth0 domain.")
+        domain = self.auth0_domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+        token_url = f"https://{domain}/oauth/token"
         payload = {
             "grant_type": "client_credentials",
             "client_id": self.client_id,
@@ -71,10 +79,12 @@ class KontractsClient:
             resp.raise_for_status()
             data = resp.json()
 
-        self._access_token = data["access_token"]
+        access_token = data["access_token"]
         expires_in = data.get("expires_in", 86400)
-        self._token_expires_at = time.time() + expires_in
-        return self._access_token
+        expires_at = time.time() + expires_in
+        _TOKEN_CACHE[cache_key] = (access_token, expires_at)
+        logger.debug("Auth0 token refreshed for client_id=%s, expires_in=%ss", self.client_id, expires_in)
+        return access_token
 
     async def _headers(self) -> Dict[str, str]:
         token = await self._get_access_token()
@@ -95,10 +105,15 @@ class KontractsClient:
 
     async def _post(self, path: str, data: Dict) -> Any:
         headers = await self._headers()
+        logger.info("POST %s payload: %s", path, data)
         async with httpx.AsyncClient(timeout=60) as http:
             resp = await http.post(
                 f"{self.base_url}{path}", headers=headers, json=data
             )
+            if resp.is_error:
+                logger.error(
+                    "POST %s → %s: %s", path, resp.status_code, resp.text
+                )
             resp.raise_for_status()
             return resp.json()
 

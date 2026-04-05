@@ -88,7 +88,7 @@ export default function LogsPage() {
 
   return (
     <MainLayout title="Logs">
-      <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4">
         {/* Stats bar */}
         {stats && (
           <div className="flex flex-wrap gap-4 text-sm">

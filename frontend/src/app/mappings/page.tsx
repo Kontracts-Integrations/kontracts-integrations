@@ -3,16 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { mappingsApi, runsApi } from "@/lib/api";
+import { mappingsApi, runsApi, connectionsApi, sourceApi, kontractsApi } from "@/lib/api";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/toaster";
 import { cn, formatRelativeTime, getStatusColor } from "@/lib/utils";
-import { Plus, GitBranch, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, FileCode, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import type { MappingTemplate } from "@/types";
 
 function MappingCard({ mapping }: { mapping: MappingTemplate }) {
@@ -22,7 +23,10 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
     mutationFn: () => mappingsApi.delete(mapping.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mappings"] });
-      toast({ title: "Mapping deleted" });
+      toast({ title: "Mapping Template Deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -42,61 +46,33 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-primary" />
+              <FileCode className="h-4 w-4 text-primary" />
               <h3 className="font-medium">{mapping.name}</h3>
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-xs font-medium",
-                  mapping.is_active
-                    ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                    : "bg-gray-100 text-gray-600"
-                )}
-              >
-                {mapping.is_active ? "Active" : "Inactive"}
-              </span>
-              {mapping.current_version && (
-                <span className="text-xs text-muted-foreground">
-                  v{mapping.current_version.version_number}
-                </span>
-              )}
             </div>
-
             {mapping.description && (
               <p className="mt-1 text-sm text-muted-foreground">{mapping.description}</p>
             )}
-
             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              {mapping.tririga_module && (
-                <span>
-                  TRIRIGA: <code className="font-mono">{mapping.tririga_module}</code>
-                  {mapping.tririga_query_name && (
-                    <span> / {mapping.tririga_query_name}</span>
-                  )}
-                </span>
-              )}
-              {mapping.kontracts_endpoint && (
-                <span>
-                  →{" "}
-                  <code className="font-mono">
-                    {mapping.kontracts_method} {mapping.kontracts_endpoint}
-                  </code>
-                </span>
-              )}
               {mapping.current_version && (
                 <span>
-                  {mapping.current_version.field_mappings?.mappings?.length ?? 0} fields mapped
+                  {(() => { const n = mapping.current_version.field_mappings?.mappings?.length ?? 0; return `${n} ${n === 1 ? "field" : "fields"} mapped`; })()}
                 </span>
               )}
               <span>Updated {formatRelativeTime(mapping.updated_at)}</span>
             </div>
           </div>
-
           <div className="flex items-center gap-2 flex-shrink-0">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/mappings/${mapping.id}`}>
+                <Pencil className="h-4 w-4" />
+                <span className="ml-1 hidden sm:inline">Edit</span>
+              </Link>
+            </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={() => runMutation.mutate()}
               disabled={runMutation.isPending || !mapping.is_active}
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
               {runMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -105,16 +81,9 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
               )}
               <span className="ml-1 hidden sm:inline">Run</span>
             </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/mappings/${mapping.id}`}>
-                <Pencil className="h-4 w-4" />
-                <span className="ml-1 hidden sm:inline">Edit</span>
-              </Link>
-            </Button>
             <Button
-              variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-destructive"
+              className="bg-red-600 hover:bg-red-700 text-white"
               onClick={() => {
                 if (confirm(`Delete mapping "${mapping.name}"?`)) {
                   deleteMutation.mutate();
@@ -123,6 +92,7 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
               disabled={deleteMutation.isPending}
             >
               <Trash2 className="h-4 w-4" />
+              <span className="ml-1 hidden sm:inline">Delete</span>
             </Button>
           </div>
         </div>
@@ -141,15 +111,80 @@ function CreateMappingDialog({
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [sourceConnId, setSourceConnId] = useState<number | undefined>(undefined);
+  const [targetConnId, setTargetConnId] = useState<number | undefined>(undefined);
+  const [kontractsEndpoint, setKontractsEndpoint] = useState("");
+  const [kontractsMethod, setKontractsMethod] = useState("POST");
+  const [sourceModule, setSourceModule] = useState("");
+  const [sourceObject, setSourceObject] = useState("");
+  const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(false);
+  const [assocModule, setAssocModule] = useState("");
+  const [assocObject, setAssocObject] = useState("");
+  const [assocString, setAssocString] = useState("");
+  const [createdId, setCreatedId] = useState<number | null>(null);
+
+  const { data: connections } = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => connectionsApi.list(),
+    enabled: open,
+  });
+  const sourceConns = connections?.filter((c) => c.connection_type !== "kontracts") ?? [];
+  const kontractsConns = connections?.filter((c) => c.connection_type === "kontracts") ?? [];
+
+  const { data: modules = [] } = useQuery({
+    queryKey: ["source-modules", sourceConnId],
+    queryFn: () => sourceApi.getObjects(sourceConnId),
+    enabled: open,
+  });
+
+  const { data: businessObjects = [], isLoading: boLoading } = useQuery({
+    queryKey: ["source-business-objects", sourceModule, sourceConnId],
+    queryFn: () => sourceApi.getBusinessObjects(sourceModule, sourceConnId),
+    enabled: !!sourceModule,
+  });
+
+  const { data: endpoints = [] } = useQuery({
+    queryKey: ["kontracts-endpoints", targetConnId],
+    queryFn: () => kontractsApi.getEndpoints(targetConnId),
+    enabled: open,
+  });
+
+  const sourceObjectId = businessObjects.find((b) => b.name === sourceObject)?.id;
+
+  const { data: associatedObjects = [], isLoading: assocLoading } = useQuery({
+    queryKey: ["source-associated-objects", sourceObjectId, sourceConnId],
+    queryFn: () => sourceApi.getAssociatedObjects(sourceObjectId!, sourceConnId),
+    enabled: fetchAssociatedObjects && !!sourceObjectId,
+  });
+  const assocModuleOptions = [...new Set(associatedObjects.map((a) => a.module_name))];
+  const assocObjectOptions = [...new Set(
+    associatedObjects.filter((a) => a.module_name === assocModule).map((a) => a.object_type_name)
+  )];
+  const assocStringOptions = associatedObjects
+    .filter((a) => a.module_name === assocModule && a.object_type_name === assocObject)
+    .map((a) => a.association_name);
 
   const createMutation = useMutation({
     mutationFn: () =>
-      mappingsApi.create({ name, description: description || undefined, field_mappings: [] }),
+      mappingsApi.create({
+        name,
+        description: description || undefined,
+        field_mappings: [],
+        source_connection_id: sourceConnId ?? null,
+        target_connection_id: targetConnId ?? null,
+        kontracts_endpoint: kontractsEndpoint || null,
+        kontracts_method: kontractsMethod,
+        source_module: sourceModule || null,
+        source_object: sourceObject || null,
+        fetch_associated: fetchAssociatedObjects,
+        assoc_module: assocModule || null,
+        assoc_object: assocObject || null,
+        assoc_string: assocString || null,
+      }),
     onSuccess: (mapping) => {
       qc.invalidateQueries({ queryKey: ["mappings"] });
-      toast({ title: "Mapping created", description: `"${mapping.name}" ready to configure` });
-      onClose();
-      window.location.href = `/mappings/${mapping.id}`;
+      toast({ title: "Mapping created", description: `"${mapping.name}" saved successfully` });
+      setCreatedId(mapping.id);
     },
     onError: (err: Error) => {
       toast({ title: "Create failed", description: err.message, variant: "destructive" });
@@ -158,39 +193,220 @@ function CreateMappingDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-w-6xl w-[90vw] h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Mapping Template</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="max-h-[70vh] overflow-y-auto space-y-4 pl-4 pr-1 pb-3">
+          {/* Name & Description */}
           <div className="space-y-2">
-            <Label>Name</Label>
+            <Label className="text-xs">Name</Label>
             <Input
-              placeholder="TRIRIGA Leases → Kontracts"
+              className="h-8 text-xs"
+              placeholder="Name your Mapping Template..."
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label>Description (optional)</Label>
+            <Label className="text-xs">Description (optional)</Label>
             <Input
+              className="h-8 text-xs"
               placeholder="Brief description of what this mapping does"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+
+          {/* Connections + Endpoint */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Source Connection</Label>
+              <Select
+                value={sourceConnId ? String(sourceConnId) : "__default__"}
+                onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Default (env)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Default (from env)</SelectItem>
+                  {sourceConns.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Kontracts Connection</Label>
+              <Select
+                value={targetConnId ? String(targetConnId) : "__default__"}
+                onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Default (env)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Default (from env)</SelectItem>
+                  {kontractsConns.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Kontracts Endpoint</Label>
+              <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Select endpoint..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {endpoints.filter((e) => e.has_request_body).map((e) => (
+                    <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
+                      <span className="font-mono text-xs">{e.method}</span> <span>{e.path}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* TRIRIGA Module + Business Object */}
+          <div className="grid grid-cols-2 gap-4 border-l-4 border-l-blue-400 pl-3 rounded-sm">
+            <div className="space-y-1">
+              <Label className="text-xs">TRIRIGA Module</Label>
+              <Select
+                value={sourceModule}
+                onValueChange={(v) => { setSourceModule(v); setSourceObject(""); }}
+                disabled={fetchAssociatedObjects}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Select TRIRIGA Module..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {modules.map((m) => (
+                    <SelectItem key={m.name} value={m.name}>{m.label ?? m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">TRIRIGA Business Object</Label>
+              <Select
+                value={sourceObject}
+                onValueChange={setSourceObject}
+                disabled={!sourceModule || boLoading || fetchAssociatedObjects}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessObjects.map((bo) => (
+                    <SelectItem key={bo.name} value={bo.name}>{bo.label ?? bo.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Fetch Associated Objects */}
+          <div className={cn("flex items-center gap-2 border-l-4 pl-3 rounded-sm transition-colors", fetchAssociatedObjects ? "border-l-purple-400" : "border-l-transparent")}>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-primary"
+                checked={fetchAssociatedObjects}
+                onChange={(e) => {
+                  setFetchAssociatedObjects(e.target.checked);
+                  if (!e.target.checked) { setAssocModule(""); setAssocObject(""); setAssocString(""); }
+                }}
+              />
+              Fetch Associated Objects?
+            </label>
+          </div>
+
+          {/* Associated Object selectors */}
+          {fetchAssociatedObjects && (
+            <div className="grid grid-cols-3 gap-4 border-l-4 border-l-purple-400 pl-3 rounded-sm">
+              <div className="space-y-1">
+                <Label className="text-xs">Associated TRIRIGA Module</Label>
+                <Select
+                  value={assocModule}
+                  onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }}
+                  disabled={assocLoading}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder={assocLoading ? "Loading..." : "Select Associated Module..."} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72 overflow-y-auto">
+                    {assocModuleOptions.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Associated TRIRIGA Business Object</Label>
+                <Select
+                  value={assocObject}
+                  onValueChange={(v) => { setAssocObject(v); setAssocString(""); }}
+                  disabled={!assocModule}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72 overflow-y-auto">
+                    {assocObjectOptions.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Association String</Label>
+                <Select
+                  value={assocString}
+                  onValueChange={setAssocString}
+                  disabled={!assocObject}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder={!assocObject ? "Select Associated Business Object first..." : "Select Association String..."} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72 overflow-y-auto">
+                    {assocStringOptions.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => createMutation.mutate()}
-            disabled={!name.trim() || createMutation.isPending}
-          >
-            {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create & Configure
-          </Button>
+          {createdId ? (
+            <>
+              <Button asChild>
+                <Link href={`/mappings/${createdId}`}>Add Field Mappings</Link>
+              </Button>
+              <Button variant="outline" onClick={onClose}>
+                Save & Close
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => createMutation.mutate()}
+                disabled={!name.trim() || createMutation.isPending}
+              >
+                {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create
+              </Button>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -205,18 +421,18 @@ export default function MappingsPage() {
     queryFn: () => mappingsApi.list(),
   });
 
+
   return (
     <MainLayout title="Mapping Templates">
-      <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
               {mappings?.length ?? 0} mapping templates configured
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Mapping
+          <Button size="sm" onClick={() => setShowCreate(true)}>
+            Create Mapping Template
           </Button>
         </div>
 
@@ -226,7 +442,7 @@ export default function MappingsPage() {
           </div>
         ) : !mappings?.length ? (
           <div className="rounded-lg border-2 border-dashed py-16 text-center">
-            <GitBranch className="mx-auto h-12 w-12 text-muted-foreground/40" />
+            <FileCode className="mx-auto h-12 w-12 text-muted-foreground/40" />
             <h3 className="mt-4 text-lg font-medium">No mappings yet</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Create your first mapping template to start syncing data from TRIRIGA to Kontracts.

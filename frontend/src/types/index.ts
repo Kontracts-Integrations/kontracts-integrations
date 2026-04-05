@@ -50,7 +50,9 @@ export type TransformType =
   | "boolean_convert"
   | "string_template"
   | "lookup_table"
-  | "json_path";
+  | "json_path"
+  | "currency_code"
+  | "lease_lookup";
 
 export interface FieldMapping {
   id: string;
@@ -60,6 +62,7 @@ export interface FieldMapping {
   transform_config?: Record<string, unknown> | null;
   is_required: boolean;
   description?: string | null;
+  use_associated?: boolean;
 }
 
 export interface MappingVersion {
@@ -77,10 +80,15 @@ export interface MappingTemplate {
   description: string | null;
   source_connection_id: number | null;
   target_connection_id: number | null;
+  source_module: string | null;
   source_object: string | null;
   source_query: string | null;
   kontracts_endpoint: string | null;
   kontracts_method: string | null;
+  fetch_associated: boolean;
+  assoc_module: string | null;
+  assoc_object: string | null;
+  assoc_string: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -92,11 +100,16 @@ export interface MappingTemplateCreate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
+  source_module?: string;
   source_object?: string;
   source_query?: string;
   kontracts_endpoint?: string;
   kontracts_method?: string;
   field_mappings: FieldMapping[];
+  fetch_associated?: boolean;
+  assoc_module?: string;
+  assoc_object?: string;
+  assoc_string?: string;
 }
 
 export interface MappingTemplateUpdate {
@@ -104,10 +117,15 @@ export interface MappingTemplateUpdate {
   description?: string;
   source_connection_id?: number;
   target_connection_id?: number;
+  source_module?: string;
   source_object?: string;
   source_query?: string;
   kontracts_endpoint?: string;
   kontracts_method?: string;
+  fetch_associated?: boolean;
+  assoc_module?: string;
+  assoc_object?: string;
+  assoc_string?: string;
   field_mappings?: FieldMapping[];
   is_active?: boolean;
 }
@@ -174,6 +192,7 @@ export interface LogEntry {
 export interface SourceObject {
   name: string;
   label: string;
+  id?: number;
   category?: string;
 }
 
@@ -183,6 +202,7 @@ export interface SourceField {
   type: string;
   required?: boolean;
   read_only?: boolean;
+  section?: string;
 }
 
 // Backwards-compatible aliases

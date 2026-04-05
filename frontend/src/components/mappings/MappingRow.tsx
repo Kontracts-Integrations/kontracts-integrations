@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { TransformEditor } from "./TransformEditor";
 import { cn } from "@/lib/utils";
-import { Trash2, ChevronDown, ChevronUp, GripVertical } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp, GripVertical, ChevronsUpDown } from "lucide-react";
 import type { FieldMapping, TririgaField, KontractsField, TransformType } from "@/types";
 
 const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
@@ -17,12 +19,17 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: "string_template", label: "String template" },
   { value: "lookup_table", label: "Lookup table" },
   { value: "json_path", label: "JSON path" },
+  { value: "currency_code", label: "Currency code" },
+  { value: "lease_lookup", label: "Lease lookup (TRIRIGA → Kontracts ID)" },
 ];
 
 interface Props {
   mapping: FieldMapping;
   sourceFields: TririgaField[];
+  assocFields?: TririgaField[];
+  assocFieldsLoading?: boolean;
   targetFields: KontractsField[];
+  sourceLoading?: boolean;
   onChange: (updated: FieldMapping) => void;
   onDelete: () => void;
   index: number;
@@ -31,12 +38,18 @@ interface Props {
 export function MappingRow({
   mapping,
   sourceFields,
+  assocFields = [],
+  assocFieldsLoading,
   targetFields,
+  sourceLoading,
   onChange,
   onDelete,
   index,
 }: Props) {
+  const activeFields = mapping.use_associated ? assocFields : sourceFields;
+  const activeLoading = mapping.use_associated ? assocFieldsLoading : sourceLoading;
   const [expanded, setExpanded] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
 
   const update = (patch: Partial<FieldMapping>) => {
     onChange({ ...mapping, ...patch });
@@ -45,33 +58,94 @@ export function MappingRow({
   const showExpandButton = mapping.transform_type !== "direct";
 
   return (
-    <div className={cn("rounded-md border bg-card", expanded && "ring-1 ring-primary/20")}>
-      <div className="flex items-center gap-2 p-3">
+    <div className={cn(
+      "rounded-md border bg-card border-l-4",
+      mapping.use_associated ? "border-l-purple-400" : "border-l-blue-400",
+      expanded && "ring-1 ring-primary/20"
+    )}>
+      <div className="flex items-center gap-3 p-2">
         {/* Drag handle */}
         <GripVertical className="h-4 w-4 flex-shrink-0 cursor-grab text-muted-foreground" />
 
         {/* Row number */}
         <span className="w-5 text-center text-xs text-muted-foreground">{index + 1}</span>
 
-        {/* Source field */}
+
+        {/* Source field — searchable combobox */}
         <div className="flex-1">
-          <Select
-            value={mapping.source_field || "__none__"}
-            onValueChange={(v) => update({ source_field: v === "__none__" ? "" : v })}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Source field..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— none —</SelectItem>
-              {sourceFields.map((f) => (
-                <SelectItem key={f.name} value={f.name}>
-                  <span className="font-mono">{f.name}</span>
-                  <span className="ml-2 text-muted-foreground">({f.type})</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={sourceOpen} onOpenChange={setSourceOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                disabled={activeLoading}
+                className="h-8 w-full justify-between text-xs font-normal"
+              >
+                {mapping.source_field ? (
+                  (() => {
+                    const raw = mapping.source_field;
+                    const [sec, name] = raw.includes("||") ? raw.split("||", 2) : ["", raw];
+                    return (
+                      <span className="truncate">
+                        {sec && <span className="text-muted-foreground">{sec}::</span>}
+                        <span className="font-mono">{name}</span>
+                      </span>
+                    );
+                  })()
+                ) : (
+                  <span className="text-muted-foreground">{activeLoading ? "Loading fields..." : "Source field..."}</span>
+                )}
+                <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[400px] p-0">
+              <Command
+                filter={(value, search) => {
+                  // Search by field name (part after ||) and label — ignore section prefix
+                  const fieldName = value.includes("||") ? value.split("||")[1] : value;
+                  const field = activeFields.find((f) => f.name === fieldName);
+                  const haystack = `${fieldName} ${field?.label ?? ""}`.toLowerCase();
+                  return haystack.includes(search.toLowerCase()) ? 1 : 0;
+                }}
+              >
+                <CommandInput placeholder="Search fields..." className="h-9" />
+                <CommandList>
+                  <CommandEmpty>No fields found.</CommandEmpty>
+                  <CommandItem
+                    value="__none__"
+                    onSelect={() => { update({ source_field: "" }); setSourceOpen(false); }}
+                  >
+                    — none —
+                  </CommandItem>
+                  {(() => {
+                    const grouped = activeFields.reduce((acc, f) => {
+                      const sec = f.section || "General";
+                      if (!acc[sec]) acc[sec] = [];
+                      acc[sec].push(f);
+                      return acc;
+                    }, {} as Record<string, typeof sourceFields>);
+                    return Object.entries(grouped).map(([section, fields]) => (
+                      <CommandGroup key={section} heading={section}>
+                        {fields.map((f) => {
+                          const compositeValue = `${section}||${f.name}`;
+                          return (
+                            <CommandItem
+                              key={compositeValue}
+                              value={compositeValue}
+                              onSelect={() => { update({ source_field: compositeValue }); setSourceOpen(false); }}
+                            >
+                              <span className="font-mono">{f.name}</span>
+                              {f.label !== f.name && <span className="ml-1 text-muted-foreground">({f.label})</span>}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    ));
+                  })()}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Arrow */}
@@ -120,7 +194,6 @@ export function MappingRow({
                 <SelectItem key={f.name} value={f.name}>
                   <span className="font-mono">{f.name}</span>
                   {f.required && <span className="ml-1 text-red-500">*</span>}
-                  <span className="ml-2 text-muted-foreground">({f.type})</span>
                 </SelectItem>
               ))}
             </SelectContent>

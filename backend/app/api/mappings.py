@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,7 +35,7 @@ def _versions_list(template: MappingTemplate) -> list:
 def _build_response(template: MappingTemplate) -> MappingTemplateResponse:
     current_version = None
     versions_sorted = sorted(
-        _versions_list(template), key=lambda v: v.version_number, reverse=True
+        _versions_list(template), key=lambda v: (v.version_number, v.id), reverse=True
     )
     if versions_sorted:
         for v in versions_sorted:
@@ -60,10 +60,15 @@ def _build_response_with_version(
         description=template.description,
         source_connection_id=template.source_connection_id,
         target_connection_id=template.target_connection_id,
+        source_module=template.source_module,
         source_object=template.source_object,
         source_query=template.source_query,
         kontracts_endpoint=template.kontracts_endpoint,
         kontracts_method=template.kontracts_method,
+        fetch_associated=template.fetch_associated,
+        assoc_module=template.assoc_module,
+        assoc_object=template.assoc_object,
+        assoc_string=template.assoc_string,
         is_active=template.is_active,
         created_at=template.created_at,
         updated_at=template.updated_at,
@@ -71,34 +76,58 @@ def _build_response_with_version(
     )
 
 
+async def _get_current_version(db: AsyncSession, template_id: int) -> Optional[MappingVersion]:
+    """Query the current version for a template directly from DB."""
+    result = await db.execute(
+        select(MappingVersion)
+        .where(MappingVersion.template_id == template_id)
+        .where(MappingVersion.is_current.is_(True))
+        .order_by(MappingVersion.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("/", response_model=List[MappingTemplateResponse])
 async def list_mappings(
     active_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
-    q = (
-        select(MappingTemplate)
-        .options(selectinload(MappingTemplate.versions))
-        .order_by(MappingTemplate.created_at.desc())
-    )
+    q = select(MappingTemplate).order_by(MappingTemplate.created_at.desc())
     if active_only:
         q = q.where(MappingTemplate.is_active.is_(True))
     result = await db.execute(q)
     templates = result.scalars().all()
-    return [_build_response(t) for t in templates]
+
+    # Load current versions for all templates in one query
+    if templates:
+        template_ids = [t.id for t in templates]
+        cv_result = await db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.template_id.in_(template_ids))
+            .where(MappingVersion.is_current.is_(True))
+            .order_by(MappingVersion.id.desc())
+        )
+        current_versions: dict = {}
+        for v in cv_result.scalars().all():
+            if v.template_id not in current_versions:
+                current_versions[v.template_id] = v
+    else:
+        current_versions = {}
+
+    return [_build_response_with_version(t, current_versions.get(t.id)) for t in templates]
 
 
 @router.get("/{mapping_id}", response_model=MappingTemplateResponse)
 async def get_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(MappingTemplate)
-        .where(MappingTemplate.id == mapping_id)
-        .options(selectinload(MappingTemplate.versions))
+        select(MappingTemplate).where(MappingTemplate.id == mapping_id)
     )
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Mapping template not found")
-    return _build_response(template)
+    current_version = await _get_current_version(db, mapping_id)
+    return _build_response_with_version(template, current_version)
 
 
 @router.post(
@@ -112,6 +141,7 @@ async def create_mapping(
         description=payload.description,
         source_connection_id=payload.source_connection_id,
         target_connection_id=payload.target_connection_id,
+        source_module=payload.source_module,
         source_object=payload.source_object,
         source_query=payload.source_query,
         kontracts_endpoint=payload.kontracts_endpoint,
@@ -149,32 +179,48 @@ async def update_mapping(
     if not template:
         raise HTTPException(status_code=404, detail="Mapping template not found")
 
-    if payload.name is not None:
+    fields = payload.model_fields_set
+    if "name" in fields and payload.name is not None:
         template.name = payload.name
-    if payload.description is not None:
+    if "description" in fields:
         template.description = payload.description
-    if payload.source_connection_id is not None:
+    if "source_connection_id" in fields:
         template.source_connection_id = payload.source_connection_id
-    if payload.target_connection_id is not None:
+    if "target_connection_id" in fields:
         template.target_connection_id = payload.target_connection_id
-    if payload.source_object is not None:
+    if "source_module" in fields:
+        template.source_module = payload.source_module
+    if "source_object" in fields:
         template.source_object = payload.source_object
-    if payload.source_query is not None:
+    if "source_query" in fields:
         template.source_query = payload.source_query
-    if payload.kontracts_endpoint is not None:
+    if "kontracts_endpoint" in fields:
         template.kontracts_endpoint = payload.kontracts_endpoint
-    if payload.kontracts_method is not None:
+    if "kontracts_method" in fields and payload.kontracts_method is not None:
         template.kontracts_method = payload.kontracts_method
-    if payload.is_active is not None:
+    if "is_active" in fields and payload.is_active is not None:
         template.is_active = payload.is_active
+    if "fetch_associated" in fields and payload.fetch_associated is not None:
+        template.fetch_associated = payload.fetch_associated
+    if "assoc_module" in fields:
+        template.assoc_module = payload.assoc_module
+    if "assoc_object" in fields:
+        template.assoc_object = payload.assoc_object
+    if "assoc_string" in fields:
+        template.assoc_string = payload.assoc_string
 
     if payload.field_mappings is not None:
-        raw = template.versions
-        existing_versions: list = raw if isinstance(raw, list) else ([raw] if raw is not None else [])
-        for v in existing_versions:
-            v.is_current = False
-
-        max_version = max((v.version_number for v in existing_versions), default=0)
+        await db.execute(
+            sql_update(MappingVersion)
+            .where(MappingVersion.template_id == mapping_id)
+            .values(is_current=False)
+        )
+        max_result = await db.execute(
+            select(func.max(MappingVersion.version_number)).where(
+                MappingVersion.template_id == mapping_id
+            )
+        )
+        max_version = max_result.scalar() or 0
         field_mappings_data = [fm.model_dump() for fm in payload.field_mappings]
         new_version = MappingVersion(
             template_id=template.id,
@@ -189,7 +235,8 @@ async def update_mapping(
     if payload.field_mappings is not None:
         await db.refresh(new_version)  # populate id / created_at
         return _build_response_with_version(template, new_version)
-    return _build_response(template)
+    current_version = await _get_current_version(db, mapping_id)
+    return _build_response_with_version(template, current_version)
 
 
 @router.delete("/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -201,7 +248,7 @@ async def delete_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
     if not template:
         raise HTTPException(status_code=404, detail="Mapping template not found")
     await db.delete(template)
-    await db.flush()
+    await db.commit()
 
 
 @router.get("/{mapping_id}/versions", response_model=List[MappingVersionResponse])

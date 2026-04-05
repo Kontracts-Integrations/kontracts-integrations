@@ -10,6 +10,7 @@ Supported transform types:
   string_template  - Jinja2-style {field} substitution
   lookup_table     - map discrete values to other values
   json_path        - extract value from nested dict via JSONPath
+  lease_lookup     - look up kontracts_id from lease_mappings table by tririga_record_id
 """
 import logging
 import re
@@ -23,6 +24,7 @@ def apply_transform(
     value: Any,
     config: Optional[Dict[str, Any]],
     source_record: Optional[Dict[str, Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """
     Dispatch to the appropriate transform function.
@@ -32,12 +34,14 @@ def apply_transform(
         value: The source field value.
         config: Transform-specific configuration dict.
         source_record: The full source record (needed for string_template, json_path).
+        context: Runtime context dict (e.g. {"lease_mappings": {tririga_id: kontracts_id}}).
 
     Returns:
         Transformed value.
     """
     cfg = config or {}
     source = source_record or {}
+    ctx = context or {}
 
     try:
         if transform_type == "direct":
@@ -53,9 +57,13 @@ def apply_transform(
         elif transform_type == "string_template":
             return _string_template(value, cfg, source)
         elif transform_type == "lookup_table":
-            return _lookup_table(value, cfg)
+            return _lookup_table(value, cfg, ctx)
         elif transform_type == "json_path":
             return _json_path(value, cfg, source)
+        elif transform_type == "currency_code":
+            return _currency_code(value, cfg)
+        elif transform_type == "lease_lookup":
+            return _lease_lookup(value, cfg, ctx)
         else:
             logger.warning(f"Unknown transform type '{transform_type}', using direct")
             return _direct(value, cfg)
@@ -83,21 +91,33 @@ def _date_format(value: Any, cfg: Dict) -> Optional[str]:
     Config:
         input_format  - strptime format (default: auto-detect via dateutil)
         output_format - strftime format (default: "%Y-%m-%d")
+
+    Also handles Unix timestamps in milliseconds (large integers like 1363302000000).
     """
     if value is None:
         return None
 
     from dateutil import parser as dateutil_parser
+    from datetime import datetime, timezone
 
     output_fmt = cfg.get("output_format", "%Y-%m-%d")
 
     try:
         input_fmt = cfg.get("input_format")
         if input_fmt:
-            from datetime import datetime
             dt = datetime.strptime(str(value), input_fmt)
         else:
-            dt = dateutil_parser.parse(str(value))
+            # Detect Unix millisecond timestamps (13-digit numbers)
+            try:
+                numeric = float(str(value).strip())
+                if numeric > 1_000_000_000_000:  # > year 2001 in ms
+                    dt = datetime.fromtimestamp(numeric / 1000, tz=timezone.utc)
+                elif numeric > 1_000_000_000:    # Unix seconds
+                    dt = datetime.fromtimestamp(numeric, tz=timezone.utc)
+                else:
+                    dt = dateutil_parser.parse(str(value))
+            except (ValueError, TypeError):
+                dt = dateutil_parser.parse(str(value))
 
         return dt.strftime(output_fmt)
     except Exception as e:
@@ -198,15 +218,21 @@ def _string_template(value: Any, cfg: Dict, source_record: Dict) -> Optional[str
         return str(value) if value is not None else None
 
 
-def _lookup_table(value: Any, cfg: Dict) -> Any:
+def _lookup_table(value: Any, cfg: Dict, context: Dict = {}) -> Any:
     """
     Map a discrete value to another using a lookup table.
 
     Config:
-        table    - dict mapping input -> output
-        default  - value to return if no match (default: original value)
+        table          - dict mapping input -> output (used when dynamic_source is not set)
+        dynamic_source - "lease_mappings" to load the table from runtime context instead
+        default        - value to return if no match (default: original value)
     """
-    table: Dict[str, Any] = cfg.get("table", {})
+    dynamic_source = cfg.get("dynamic_source")
+    if dynamic_source == "lease_mappings":
+        table: Dict[str, Any] = context.get("lease_mappings", {})
+    else:
+        table = cfg.get("table", {})
+
     default_val = cfg.get("default", value)
 
     if value is None:
@@ -214,6 +240,82 @@ def _lookup_table(value: Any, cfg: Dict) -> Any:
 
     str_val = str(value)
     return table.get(str_val, table.get(value, default_val))
+
+
+def _currency_code(value: Any, cfg: Dict) -> Optional[str]:
+    """
+    Convert a currency name or symbol to a 3-letter ISO 4217 code.
+
+    Config:
+        default - value to return if no match (default: original value)
+    """
+    _NAME_TO_CODE = {
+        "us dollars": "USD", "united states dollar": "USD", "usd": "USD",
+        "canadian dollars": "CAD", "canadian dollar": "CAD", "cad": "CAD",
+        "euro": "EUR", "euros": "EUR", "eur": "EUR",
+        "british pounds": "GBP", "pound sterling": "GBP", "gbp": "GBP",
+        "australian dollars": "AUD", "australian dollar": "AUD", "aud": "AUD",
+        "japanese yen": "JPY", "yen": "JPY", "jpy": "JPY",
+        "chinese yuan": "CNY", "renminbi": "CNY", "cny": "CNY", "chinese renminbi": "CNY",
+        "indian rupees": "INR", "indian rupee": "INR", "inr": "INR",
+        "uae dirham": "AED", "dirham": "AED", "aed": "AED",
+        "swiss franc": "CHF", "swiss francs": "CHF", "chf": "CHF",
+        "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD",
+        "hong kong dollar": "HKD", "hong kong dollars": "HKD", "hkd": "HKD",
+        "mexican peso": "MXN", "mexican pesos": "MXN", "mxn": "MXN",
+        "brazilian real": "BRL", "brl": "BRL",
+        "south african rand": "ZAR", "rand": "ZAR", "zar": "ZAR",
+        "swedish krona": "SEK", "sek": "SEK",
+        "norwegian krone": "NOK", "nok": "NOK",
+        "danish krone": "DKK", "dkk": "DKK",
+        "new zealand dollar": "NZD", "nzd": "NZD",
+        "russian ruble": "RUB", "rub": "RUB",
+        "turkish lira": "TRY", "try": "TRY",
+        "korean won": "KRW", "krw": "KRW",
+    }
+    if value is None:
+        return cfg.get("default")
+
+    raw = str(value).strip()
+
+    # Strip parenthetical suffixes: "Chinese Renminbi  (Yuan)" → "Chinese Renminbi"
+    raw_no_parens = re.sub(r'\s*\(.*?\)', '', raw).strip()
+
+    # Normalize whitespace and lowercase for both variants
+    key = re.sub(r'\s+', ' ', raw).lower()
+    key_no_parens = re.sub(r'\s+', ' ', raw_no_parens).lower()
+
+    result = _NAME_TO_CODE.get(key) or _NAME_TO_CODE.get(key_no_parens)
+    if result:
+        return result
+
+    # If already 3 chars and looks like a code, return uppercased
+    if len(key_no_parens) == 3 and key_no_parens.isalpha():
+        return key_no_parens.upper()
+
+    return cfg.get("default", str(value))
+
+
+def _lease_lookup(value: Any, cfg: Dict, context: Dict) -> Any:
+    """
+    Look up a Kontracts ID from the lease_mappings table using a TRIRIGA record ID.
+
+    The context dict must contain "lease_mappings": {tririga_record_id: kontracts_id}.
+
+    Config:
+        default - value to return if no match found (default: None)
+    """
+    if value is None:
+        return cfg.get("default")
+
+    lease_map: Dict[str, str] = context.get("lease_mappings", {})
+    result = lease_map.get(str(value))
+
+    if result is None:
+        logger.warning(f"lease_lookup: no kontracts_id found for tririga_record_id '{value}'")
+        return cfg.get("default")
+
+    return result
 
 
 def _json_path(value: Any, cfg: Dict, source_record: Dict) -> Any:

@@ -1,20 +1,20 @@
 "use client";
 
 import { Sidebar } from "./Sidebar";
-import { Header } from "./Header";
+import { TopBar } from "./TopBar";
 
 interface MainLayoutProps {
   children: React.ReactNode;
   title?: string;
 }
 
-export function MainLayout({ children, title }: MainLayoutProps) {
+export function MainLayout({ children }: MainLayoutProps) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header title={title} />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <TopBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <main className="flex-1 overflow-hidden flex flex-col p-6">{children}</main>
       </div>
     </div>
   );

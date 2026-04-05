@@ -48,7 +48,7 @@ export default function RootLayout({
           <QueryClientProvider client={queryClient}>
             {children}
             <Toaster />
-            <ReactQueryDevtools initialIsOpen={false} />
+            <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
           </QueryClientProvider>
         </ThemeProvider>
       </body>

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -136,6 +137,26 @@ async def retry_run(
     return new_run
 
 
+@router.post("/{run_id}/cancel", response_model=SyncRunResponse)
+async def cancel_run(
+    run_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(SyncRun).where(SyncRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status not in (RunStatus.pending, RunStatus.running):
+        raise HTTPException(status_code=400, detail="Only pending or running runs can be cancelled")
+
+    run.status = RunStatus.stopped
+    run.error_message = "Manually stopped by user"
+    run.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
 async def _execute_sync_run(run_id: int) -> None:
     from app.sync_service.service import SyncService
 
@@ -143,7 +164,7 @@ async def _execute_sync_run(run_id: int) -> None:
         try:
             service = SyncService(db)
             await service.execute_run(run_id)
-            await db.commit()
         except Exception as e:
             logger.error(f"Background sync run {run_id} failed: {e}", exc_info=True)
-            await db.rollback()
+        finally:
+            await db.commit()

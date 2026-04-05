@@ -27,6 +27,7 @@ class MappingEngine:
     def apply(
         self,
         source_record: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], List[str]]:
         """
         Apply all field mappings to a single source record.
@@ -39,6 +40,9 @@ class MappingEngine:
 
         for mapping in self.field_mappings:
             source_field = mapping.get("source_field", "")
+            # Strip section prefix (e.g. "General||triNameTX" → "triNameTX")
+            if "||" in source_field:
+                source_field = source_field.split("||", 1)[1]
             target_field = mapping.get("target_field", "")
             transform_type = mapping.get("transform_type", "direct")
             transform_config = mapping.get("transform_config") or {}
@@ -59,6 +63,7 @@ class MappingEngine:
                     value=source_value,
                     config=transform_config,
                     source_record=source_record,
+                    context=context,
                 )
             except Exception as e:
                 msg = (

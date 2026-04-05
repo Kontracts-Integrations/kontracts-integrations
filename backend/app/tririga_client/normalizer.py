@@ -9,33 +9,23 @@ def normalize_soap_response(obj: Any) -> Any:
     Recursively convert zeep objects, CompoundValue, and similar types
     to plain Python dicts/lists suitable for JSON serialization.
     """
+    # First, use zeep's own serializer to convert all zeep types to plain Python
+    try:
+        from zeep.helpers import serialize_object
+        obj = serialize_object(obj)
+    except Exception:
+        pass
+
     if obj is None:
         return None
 
-    # Handle zeep CompoundValue (looks like a dict)
-    type_name = type(obj).__name__
-    if type_name in ("CompoundValue", "AnyObject"):
-        result = {}
-        for key in obj:
-            result[key] = normalize_soap_response(obj[key])
-        return result
-
-    # Handle zeep ArrayOfXxx
-    if hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, dict)):
-        try:
-            return [normalize_soap_response(item) for item in obj]
-        except TypeError:
-            pass
-
-    # Handle regular dicts
     if isinstance(obj, dict):
         return {k: normalize_soap_response(v) for k, v in obj.items()}
 
-    # Handle lists
     if isinstance(obj, list):
         return [normalize_soap_response(item) for item in obj]
 
-    # Scalars
+    # Scalars (str, int, float, bool, Decimal, datetime, etc.)
     return obj
 
 
@@ -86,32 +76,165 @@ def normalize_query_response(obj: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def extract_dynamic_query_result(obj: Any):
+    """
+    Normalize a runDynamicQuery (or runDynamicQueryContinue) response.
+    Returns (records, continuation_token_string, total_results).
+    """
+    normalized = normalize_soap_response(obj)
+
+    if normalized is None:
+        return [], None, 0
+
+    # Unwrap <out> envelope
+    if isinstance(normalized, dict) and "out" in normalized:
+        normalized = normalized["out"]
+
+    token_string = None
+    total_results = 0
+
+    if isinstance(normalized, dict):
+        token_obj = normalized.get("continuationToken")
+        if isinstance(token_obj, dict):
+            token_string = token_obj.get("tokenString")
+
+        total_results = normalized.get("totalResults") or 0
+        try:
+            total_results = int(total_results)
+        except (TypeError, ValueError):
+            total_results = 0
+
+    records = normalize_dynamic_query_response(normalized)
+    return records, token_string, total_results
+
+
+def normalize_dynamic_query_response(obj: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize the result of a TRIRIGA runDynamicQuery call into a list of records.
+    Handles the queryResponseHelpers structure returned by the TRIRIGA SOAP API.
+    """
+    normalized = normalize_soap_response(obj)
+
+    if normalized is None:
+        return []
+
+    if isinstance(normalized, list):
+        return normalized
+
+    if isinstance(normalized, dict):
+        # Unwrap zeep's <out> envelope if present
+        if "out" in normalized and isinstance(normalized["out"], dict):
+            normalized = normalized["out"]
+
+        # Primary TRIRIGA runDynamicQuery structure:
+        # { queryResponseHelpers: { QueryResponseHelper: [ { queryResponseColumns: { QueryResponseColumn: [...] } } ] } }
+        helpers_wrapper = normalized.get("queryResponseHelpers")
+        if helpers_wrapper:
+            helpers = helpers_wrapper.get("QueryResponseHelper", []) if isinstance(helpers_wrapper, dict) else helpers_wrapper
+            if isinstance(helpers, dict):
+                helpers = [helpers]
+            result = []
+            for helper in (helpers or []):
+                if not isinstance(helper, dict):
+                    continue
+                record = {
+                    "triRecordId": helper.get("recordId"),
+                    "triBoId": helper.get("boId"),
+                }
+                cols_wrapper = helper.get("queryResponseColumns", {})
+                cols = cols_wrapper.get("QueryResponseColumn", []) if isinstance(cols_wrapper, dict) else []
+                if isinstance(cols, dict):
+                    cols = [cols]
+                for col in (cols or []):
+                    if isinstance(col, dict):
+                        name = col.get("name") or col.get("label")
+                        if name:
+                            record[name] = col.get("value")
+                result.append(record)
+            return result
+
+        # columnHeaders + rowData fallback
+        if "columnHeaders" in normalized or "rowData" in normalized:
+            headers = normalized.get("columnHeaders") or []
+            rows = normalized.get("rowData") or []
+            if isinstance(headers, list) and isinstance(rows, list):
+                result = []
+                for row in rows:
+                    record = {}
+                    values = row.get("values", []) if isinstance(row, dict) else []
+                    if isinstance(values, dict):
+                        values = list(values.values())
+                    for i, header in enumerate(headers):
+                        field_name = (
+                            header.get("fieldName", header.get("name", f"field_{i}"))
+                            if isinstance(header, dict)
+                            else str(header)
+                        )
+                        record[field_name] = values[i] if i < len(values) else None
+                    result.append(record)
+                return result
+
+        # Flat list nested under a common key
+        for key in ("queryResultList", "records", "item", "result", "rowData"):
+            if key in normalized:
+                val = normalized[key]
+                if isinstance(val, list):
+                    return val
+                if isinstance(val, dict):
+                    return [val]
+
+        return [normalized]
+
+    return []
+
+
+def _unwrap_single_key(obj: Any) -> Any:
+    """If a dict has exactly one key whose value is a list, return that list."""
+    if isinstance(obj, dict) and len(obj) == 1:
+        val = next(iter(obj.values()))
+        if isinstance(val, list):
+            return val
+    return obj
+
+
 def extract_fields(normalized: Any) -> List[Dict[str, Any]]:
     """
     Extract field definitions from a normalized getObjectTypeByName response.
     Returns a list of {name, label, type, required} dicts.
+
+    TRIRIGA structure:
+      sections → {"Section": [...]} → each section → fields → {"Field": [...]}
     """
     fields = []
 
     if isinstance(normalized, dict):
-        field_sections = normalized.get(
-            "fieldSections",
-            normalized.get("sections", normalized.get("fields", []))
+        # Resolve sections — may be {"Section": [...]} or a plain list
+        raw_sections = normalized.get(
+            "sections",
+            normalized.get("fieldSections", normalized.get("fields", []))
         )
-        if isinstance(field_sections, list):
-            for section in field_sections:
-                if isinstance(section, dict):
-                    section_fields = section.get("fields", section.get("field", []))
-                    if isinstance(section_fields, list):
-                        for f in section_fields:
-                            fields.append(_normalize_field(f))
-                    elif isinstance(section_fields, dict):
-                        fields.append(_normalize_field(section_fields))
-        elif isinstance(field_sections, dict):
-            fields.append(_normalize_field(field_sections))
+        section_list = _unwrap_single_key(raw_sections) if isinstance(raw_sections, dict) else raw_sections
+
+        if isinstance(section_list, list):
+            for section in section_list:
+                if not isinstance(section, dict):
+                    continue
+                section_name = section.get("sectionLabel", section.get("label", section.get("name", "General")))
+                # Resolve fields — may be {"Field": [...]} or a plain list
+                raw_fields = section.get("fields", section.get("field", []))
+                field_list = _unwrap_single_key(raw_fields) if isinstance(raw_fields, dict) else raw_fields
+
+                if isinstance(field_list, list):
+                    for f in field_list:
+                        field = _normalize_field(f)
+                        field["section"] = section_name
+                        fields.append(field)
+                elif isinstance(field_list, dict):
+                    field = _normalize_field(field_list)
+                    field["section"] = section_name
+                    fields.append(field)
 
     if not fields:
-        # Return a set of common TRIRIGA fields as fallback
         fields = _get_default_fields()
 
     return fields
@@ -120,10 +243,13 @@ def extract_fields(normalized: Any) -> List[Dict[str, Any]]:
 def _normalize_field(field: Any) -> Dict[str, Any]:
     if not isinstance(field, dict):
         return {"name": str(field), "label": str(field), "type": "string"}
+    raw_type = field.get("type") or field.get("dataType") or "string"
+    if isinstance(raw_type, dict):
+        raw_type = raw_type.get("type") or raw_type.get("typeCode") or "string"
     return {
         "name": field.get("fieldName", field.get("name", "unknown")),
         "label": field.get("fieldLabel", field.get("label", field.get("name", "unknown"))),
-        "type": field.get("dataType", field.get("type", "string")),
+        "type": raw_type,
         "required": field.get("required", False),
         "read_only": field.get("readOnly", False),
     }

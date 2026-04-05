@@ -32,6 +32,7 @@ export function KontractsConnectionForm({ existing, onSuccess }: Props) {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<FormValues>({
     defaultValues: {
@@ -58,10 +59,15 @@ export function KontractsConnectionForm({ existing, onSuccess }: Props) {
         },
       };
       if (existing) {
+        const credentialUpdates: Record<string, string> = {};
+        if (values.auth0_domain) credentialUpdates.auth0_domain = values.auth0_domain;
+        if (values.client_id) credentialUpdates.client_id = values.client_id;
+        if (values.client_secret) credentialUpdates.client_secret = values.client_secret;
+        if (values.audience) credentialUpdates.audience = values.audience;
         return connectionsApi.update(existing.id, {
           name: values.name,
           base_url: values.base_url,
-          credentials: payload.credentials,
+          credentials: Object.keys(credentialUpdates).length > 0 ? credentialUpdates : undefined,
         });
       }
       return connectionsApi.create(payload);
@@ -72,6 +78,16 @@ export function KontractsConnectionForm({ existing, onSuccess }: Props) {
         title: existing ? "Connection updated" : "Connection created",
         description: "Kontracts connection saved successfully.",
       });
+      if (!existing) {
+        reset({
+          name: "Kontracts Production",
+          base_url: "https://api-dev.kontracts.pro",
+          auth0_domain: "",
+          client_id: "",
+          client_secret: "",
+          audience: "https://api-dev.kontracts.pro",
+        });
+      }
       onSuccess?.();
     },
     onError: (err: Error) => {
@@ -105,6 +121,7 @@ export function KontractsConnectionForm({ existing, onSuccess }: Props) {
         />
         <p className="text-xs text-muted-foreground">
           Your Auth0 tenant domain (without https://)
+          {existing && " — leave blank to keep existing"}
         </p>
       </div>
 

@@ -70,18 +70,61 @@ async def get_objects(
         raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
 
 
-@router.get("/fields")
-async def get_fields(
-    object_name: str = Query(...),
+@router.get("/business-objects")
+async def get_business_objects(
+    module_name: str = Query(...),
     connection_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     connector = await _get_connector(connection_id, db)
     try:
-        fields = await connector.get_object_fields(object_name)
+        if hasattr(connector, "get_business_objects"):
+            bos = await connector.get_business_objects(module_name)
+        else:
+            # Non-TRIRIGA connectors: fall back to objects list filtered by module
+            bos = await connector.get_objects()
+        return {"module": module_name, "business_objects": bos}
+    except Exception as e:
+        logger.error(f"get_business_objects failed for {module_name}: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
+
+
+@router.get("/fields")
+async def get_fields(
+    object_name: str = Query(...),
+    module_name: Optional[str] = Query(None),
+    connection_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(connection_id, db)
+    try:
+        try:
+            fields = await connector.get_object_fields(
+                object_name, **({"module_name": module_name} if module_name else {})
+            )
+        except TypeError:
+            fields = await connector.get_object_fields(object_name)
         return {"object": object_name, "fields": fields}
     except Exception as e:
         logger.error(f"get_fields failed for {object_name}: {e}")
+        raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
+
+
+@router.get("/associated-objects")
+async def get_associated_objects(
+    object_type_id: int = Query(...),
+    connection_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    connector = await _get_connector(connection_id, db)
+    try:
+        if hasattr(connector, "get_associated_objects"):
+            associations = await connector.get_associated_objects(object_type_id)
+        else:
+            associations = []
+        return {"object_type_id": object_type_id, "associations": associations}
+    except Exception as e:
+        logger.error(f"get_associated_objects failed for objectTypeId={object_type_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Source system error: {str(e)}")
 
 
