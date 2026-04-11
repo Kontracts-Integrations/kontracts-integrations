@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { runsApi, mappingsApi } from "@/lib/api";
+import type { SyncRun } from "@/types";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { RunsList } from "@/components/runs/RunsList";
 import { RunDetail } from "@/components/runs/RunDetail";
@@ -29,11 +30,11 @@ export default function RunsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["runs"] }),
   });
 
-  const { data: runs, isLoading, isRefetching } = useQuery({
+  const { data: runs, isLoading, isRefetching } = useQuery<SyncRun[]>({
     queryKey: ["runs"],
     queryFn: () => runsApi.list({ limit: 100 }),
     refetchInterval: (query) => {
-      const data = query.state.data as typeof runs;
+      const data = query.state.data as SyncRun[] | undefined;
       const hasRunning = data?.some((r) => r.status === "running");
       return hasRunning ? 2000 : 10000;
     },

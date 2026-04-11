@@ -16,8 +16,8 @@ export function RunDetail({ runId }: Props) {
   const { data: run, isLoading } = useQuery({
     queryKey: ["run", runId],
     queryFn: () => runsApi.get(runId),
-    refetchInterval: (data) =>
-      data?.status === "pending" || data?.status === "running" ? 2000 : false,
+    refetchInterval: (query) =>
+      query.state.data?.status === "pending" || query.state.data?.status === "running" ? 2000 : false,
   });
 
   if (isLoading) {

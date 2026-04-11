@@ -97,35 +97,35 @@ export interface MappingTemplate {
 
 export interface MappingTemplateCreate {
   name: string;
-  description?: string;
-  source_connection_id?: number;
-  target_connection_id?: number;
-  source_module?: string;
-  source_object?: string;
-  source_query?: string;
-  kontracts_endpoint?: string;
+  description?: string | null;
+  source_connection_id?: number | null;
+  target_connection_id?: number | null;
+  source_module?: string | null;
+  source_object?: string | null;
+  source_query?: string | null;
+  kontracts_endpoint?: string | null;
   kontracts_method?: string;
   field_mappings: FieldMapping[];
   fetch_associated?: boolean;
-  assoc_module?: string;
-  assoc_object?: string;
-  assoc_string?: string;
+  assoc_module?: string | null;
+  assoc_object?: string | null;
+  assoc_string?: string | null;
 }
 
 export interface MappingTemplateUpdate {
   name?: string;
-  description?: string;
-  source_connection_id?: number;
-  target_connection_id?: number;
-  source_module?: string;
-  source_object?: string;
-  source_query?: string;
-  kontracts_endpoint?: string;
+  description?: string | null;
+  source_connection_id?: number | null;
+  target_connection_id?: number | null;
+  source_module?: string | null;
+  source_object?: string | null;
+  source_query?: string | null;
+  kontracts_endpoint?: string | null;
   kontracts_method?: string;
   fetch_associated?: boolean;
-  assoc_module?: string;
-  assoc_object?: string;
-  assoc_string?: string;
+  assoc_module?: string | null;
+  assoc_object?: string | null;
+  assoc_string?: string | null;
   field_mappings?: FieldMapping[];
   is_active?: boolean;
 }
