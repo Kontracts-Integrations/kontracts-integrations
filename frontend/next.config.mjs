@@ -14,7 +14,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self'",
-              "connect-src 'self' http://localhost:8000 http://backend:8000",
+              `connect-src 'self' http://localhost:8000 http://backend:8000 ${process.env.NEXT_PUBLIC_API_URL || ""}`.trim(),
             ].join("; "),
           },
         ],
