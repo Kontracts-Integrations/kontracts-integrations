@@ -11,7 +11,7 @@
   "discount_rate": 0.035,
   "currency": "USD",
   "lessor_name": "Empire State Properties LLC",
-  "lessee_name": "Verizon Communications Inc",
+  "lessee_name": "Acme Corporation",
   "leased_area_sqft": 25000.00,
   "address_line1": "350 Fifth Avenue",
   "city": "New York",
