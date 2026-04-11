@@ -78,7 +78,7 @@ export default function MappingDetailPage() {
 
         <MappingBuilder
           template={template}
-          onSave={(updates) => saveMutation.mutateAsync(updates)}
+          onSave={(updates) => void saveMutation.mutateAsync(updates)}
           saving={saveMutation.isPending}
           saveRef={saveRef}
         />
