@@ -1,12 +1,14 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Moon, Workflow } from "lucide-react";
+import { Sun, Moon, Workflow, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { connectionsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
+import { useSession, signOut } from "next-auth/react";
+import Image from "next/image";
 
 function ConnectionStatusBadge({
   label,
@@ -45,6 +47,7 @@ export function TopBar() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const { data: session } = useSession();
 
   const { data: connections, isLoading } = useQuery({
     queryKey: ["connections"],
@@ -82,6 +85,32 @@ export function TopBar() {
         <Button variant="ghost" size="icon" onClick={cycleTheme} title="Toggle theme">
           <ThemeIcon className="h-4 w-4" />
         </Button>
+        {session?.user && (
+          <div className="flex items-center gap-2 pl-2 border-l">
+            {session.user.image ? (
+              <Image
+                src={session.user.image}
+                alt={session.user.name ?? "User"}
+                width={28}
+                height={28}
+                className="rounded-full"
+              />
+            ) : (
+              <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium">
+                {session.user.name?.[0] ?? "U"}
+              </div>
+            )}
+            <span className="text-sm font-medium hidden sm:block">{session.user.name}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

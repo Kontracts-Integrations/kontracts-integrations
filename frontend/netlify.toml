@@ -1,0 +1,10 @@
+[build]
+  command = "npm install && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_API_URL = "https://orion.kontracts.pro"
+  NEXTAUTH_URL = "https://kontracts-integrations.netlify.app"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
