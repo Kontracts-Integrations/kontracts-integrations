@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
+import { getSession } from "next-auth/react";
 import type {
   Connection,
   ConnectionCreate,
@@ -27,6 +28,14 @@ const http: AxiosInstance = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
   headers: { "Content-Type": "application/json" },
   timeout: 30000,
+});
+
+http.interceptors.request.use(async (config) => {
+  const session = await getSession();
+  if (session) {
+    config.headers["Authorization"] = `Bearer ${(session as { accessToken?: string }).accessToken ?? "authenticated"}`;
+  }
+  return config;
 });
 
 http.interceptors.response.use(
