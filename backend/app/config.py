@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     # TRIRIGA
-    tririga_url: str = "https://verizon.tririga.com"
+    tririga_url: str = "https://your-instance.tririga.com"
     tririga_username: Optional[str] = None
     tririga_password: Optional[str] = None
     tririga_wsdl_path: str = "/ws/TririgaWS?wsdl"

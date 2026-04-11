@@ -20,7 +20,7 @@ A production-quality full-stack integration application that bridges IBM TRIRIGA
        │ SOAP (zeep)                             │ HTTP (httpx)
 ┌──────▼───────────┐                  ┌──────────▼────────────┐
 │  IBM TRIRIGA     │                  │   Kontracts API       │
-│  verizon.        │                  │   api-dev.kontracts   │
+│  your-instance.  │                  │   api-dev.kontracts   │
 │  tririga.com     │                  │   .pro                │
 └──────────────────┘                  └───────────────────────┘
        │
@@ -56,7 +56,7 @@ cp .env.example .env
 
 ```bash
 # Minimum required:
-TRIRIGA_URL=https://verizon.tririga.com
+TRIRIGA_URL=https://your-instance.tririga.com
 TRIRIGA_USERNAME=your_username
 TRIRIGA_PASSWORD=your_password
 
