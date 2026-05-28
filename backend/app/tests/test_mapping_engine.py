@@ -399,3 +399,57 @@ class TestValidatePayload:
         is_valid, errors = validate_payload(payload, self.SCHEMA_FIELDS)
         assert not is_valid
         assert any(e.field == "name" for e in errors)
+
+
+class TestLeaseLookupTransform:
+    def test_lease_lookup_exact_match(self):
+        context = {"lease_mappings": {"EU-DE-FR-001": "2458"}}
+        result = apply_transform(
+            "lease_lookup",
+            "EU-DE-FR-001",
+            {},
+            context=context,
+        )
+        assert result == "2458"
+
+    def test_lease_lookup_normalized_match(self):
+        context = {"lease_mappings": {"EU-DE-FR-001": "2458", "EU-BG-BR-009-02": "2512"}}
+        
+        # Test full record name with -0- Watson Centre suffix
+        result1 = apply_transform(
+            "lease_lookup",
+            "EU-DE-FR-001-0-Watson Centre - Frankfurt",
+            {},
+            context=context,
+        )
+        assert result1 == "2458"
+
+        # Test full record name with -1- Cape Town suffix
+        context2 = {"lease_mappings": {"ME-SA-CT-007": "2456"}}
+        result2 = apply_transform(
+            "lease_lookup",
+            "ME-SA-CT-007-1-Cape Town Gross Lease",
+            {},
+            context=context2,
+        )
+        assert result2 == "2456"
+
+        # Test 5-segment lease ID with -0- Airport suffix
+        result3 = apply_transform(
+            "lease_lookup",
+            "EU-BG-BR-009-02-0-Airport - Brussels - Airline Gate Lease",
+            {},
+            context=context,
+        )
+        assert result3 == "2512"
+
+    def test_lease_lookup_no_match(self):
+        context = {"lease_mappings": {"EU-DE-FR-001": "2458"}}
+        result = apply_transform(
+            "lease_lookup",
+            "UNKNOWN-LEASE-ID-0-Test",
+            {"default": "default_kontracts_id"},
+            context=context,
+        )
+        assert result == "default_kontracts_id"
+

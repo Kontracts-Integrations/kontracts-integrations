@@ -207,9 +207,39 @@ class KontractsClient:
             return {"id": "demo_001", "status": "created", **payload}
 
         method = method.upper()
+        is_bulk = "bulk" in endpoint
+
         if method == "POST":
-            return await self._post(endpoint, payload)
+            final_payload = [payload] if is_bulk else payload
+            res = await self._post(endpoint, final_payload)
+            if is_bulk and isinstance(res, dict) and "payments" in res and len(res["payments"]) > 0:
+                return res["payments"][0]
+            return res
         elif method in ("PUT", "PATCH"):
-            return await self._put(endpoint, payload)
+            final_payload = [payload] if is_bulk else payload
+            res = await self._put(endpoint, final_payload)
+            if is_bulk and isinstance(res, dict) and "payments" in res and len(res["payments"]) > 0:
+                return res["payments"][0]
+            return res
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+
+    async def push_bulk(
+        self, endpoint: str, method: str, payloads: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Generic bulk push of a list of payloads to any Kontracts bulk endpoint."""
+        if self.demo_mode:
+            return {
+                "created_count": len(payloads),
+                "payments": [{"id": f"demo_{i}", **p} for i, p in enumerate(payloads)],
+                "failed_count": 0,
+                "errors": []
+            }
+
+        method = method.upper()
+        if method == "POST":
+            return await self._post(endpoint, payloads)
+        elif method in ("PUT", "PATCH"):
+            return await self._put(endpoint, payloads)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")

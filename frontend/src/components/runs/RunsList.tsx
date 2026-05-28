@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Loader2, Hourglass, Square } from "lucide-react";
 import { parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn, formatDateTime, formatDuration, getStatusColor } from "@/lib/utils";
 import type { SyncRun, MappingTemplate } from "@/types";
 
@@ -165,6 +167,74 @@ function ColumnFilter({
   );
 }
 
+function SearchableColumnFilter({
+  value,
+  onChange,
+  options,
+  allLabel,
+  searchPlaceholder = "Search...",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  allLabel: string;
+  searchPlaceholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const isFiltered = value !== "all";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-1 h-6 border-0 bg-transparent p-0 text-xs font-semibold text-muted-foreground hover:text-foreground focus:outline-none select-none">
+          <span className={cn("flex items-center gap-1", isFiltered && "text-foreground font-bold")}>
+            {allLabel}
+            {isFiltered && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[240px] p-0" align="start">
+        <Command filter={(val, search) => {
+          if (val === "all") return 1;
+          const opt = options.find(o => o.value === val);
+          const haystack = `${val} ${opt?.label ?? ""}`.toLowerCase();
+          return haystack.includes(search.toLowerCase()) ? 1 : 0;
+        }}>
+          <CommandInput placeholder={searchPlaceholder} className="h-8 text-xs" />
+          <CommandList className="max-h-[200px] overflow-y-auto">
+            <CommandEmpty className="py-2 text-center text-xs text-muted-foreground">No matches found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="all"
+                onSelect={() => {
+                  onChange("all");
+                  setOpen(false);
+                }}
+                className="text-xs"
+              >
+                - All -
+              </CommandItem>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt.value}
+                  value={opt.value}
+                  onSelect={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <span className="truncate">{opt.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function RunsList({ runs, mappings, statusFilter, mappingFilter, onStatusFilterChange, onMappingFilterChange, onSelect, onCancel }: Props) {
   const mappingMap = Object.fromEntries(mappings.map((m) => [m.id, m.name]));
 
@@ -204,11 +274,12 @@ export function RunsList({ runs, mappings, statusFilter, mappingFilter, onStatus
               />
             </th>
             <th className="p-3 text-xs font-semibold text-muted-foreground">
-              <ColumnFilter
+              <SearchableColumnFilter
                 value={mappingFilter}
                 onChange={onMappingFilterChange}
                 options={mappingOptions}
                 allLabel="Mapping Template"
+                searchPlaceholder="Search mapping templates..."
               />
             </th>
             <th className="py-3 pl-0 pr-3 text-xs font-semibold text-muted-foreground text-center">Record Count</th>

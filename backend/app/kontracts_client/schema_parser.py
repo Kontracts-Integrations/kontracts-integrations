@@ -248,6 +248,12 @@ def parse_endpoint_schema(
     if not resolved:
         return []
 
+    # If the schema is an array, parse the items schema instead (e.g. for bulk operations)
+    if resolved.get("type") == "array" and "items" in resolved:
+        resolved = _resolve_schema(resolved["items"], schema)
+        if not resolved:
+            return []
+
     return _extract_schema_fields(resolved, schema, required_fields=resolved.get("required", []))
 
 

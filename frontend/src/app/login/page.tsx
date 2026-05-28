@@ -27,13 +27,24 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <Button
-          className="w-full gap-2"
-          onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
-        >
-          <Github className="h-4 w-4" />
-          Sign in with GitHub
-        </Button>
+        <div className="flex w-full flex-col gap-3">
+          <Button
+            className="w-full gap-2"
+            onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
+          >
+            <Github className="h-4 w-4" />
+            Sign in with GitHub
+          </Button>
+
+          <Button
+            variant="outline"
+            className="w-full gap-2 border-primary/20 hover:bg-primary/5 hover:text-primary transition-all duration-300"
+            onClick={() => signIn("credentials", { callbackUrl: "/dashboard" })}
+          >
+            <Workflow className="h-4 w-4" />
+            Sign in with Demo Mode
+          </Button>
+        </div>
       </div>
     </div>
   );

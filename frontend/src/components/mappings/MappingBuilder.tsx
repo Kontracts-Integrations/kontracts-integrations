@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
@@ -277,36 +278,45 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Source Connection</Label>
-                <Select value={sourceConnId ? String(sourceConnId) : "__default__"} onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Default (env)" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__default__">Default (from env)</SelectItem>
-                    {sourceConns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={[
+                    { value: "__default__", label: "Default (from env)" },
+                    ...sourceConns.map((c) => ({ value: String(c.id), label: c.name })),
+                  ]}
+                  value={sourceConnId ? String(sourceConnId) : "__default__"}
+                  onValueChange={(v) => setSourceConnId(v === "__default__" ? undefined : parseInt(v))}
+                  placeholder="Default (env)"
+                  searchPlaceholder="Search connections..."
+                  widthClass="w-[240px]"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Kontracts Connection</Label>
-                <Select value={targetConnId ? String(targetConnId) : "__default__"} onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Default (env)" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__default__">Default (from env)</SelectItem>
-                    {kontractsConns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={[
+                    { value: "__default__", label: "Default (from env)" },
+                    ...kontractsConns.map((c) => ({ value: String(c.id), label: c.name })),
+                  ]}
+                  value={targetConnId ? String(targetConnId) : "__default__"}
+                  onValueChange={(v) => setTargetConnId(v === "__default__" ? undefined : parseInt(v))}
+                  placeholder="Default (env)"
+                  searchPlaceholder="Search connections..."
+                  widthClass="w-[240px]"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Kontracts Endpoint</Label>
-                <Select value={kontractsEndpoint} onValueChange={setKontractsEndpoint}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select endpoint..." /></SelectTrigger>
-                  <SelectContent>
-                    {endpoints.filter((e) => e.has_request_body).map((e) => (
-                      <SelectItem key={`${e.method}:${e.path}`} value={e.path}>
-                        <span className="font-mono text-xs">{e.method}</span> <span>{e.path}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={endpoints.filter((e) => e.has_request_body).map((e) => ({
+                    value: e.path,
+                    label: `${e.method} ${e.path}`,
+                  }))}
+                  value={kontractsEndpoint}
+                  onValueChange={setKontractsEndpoint}
+                  placeholder="Select endpoint..."
+                  searchPlaceholder="Search endpoints..."
+                  widthClass="w-[280px]"
+                />
               </div>
             </div>
 
@@ -314,17 +324,27 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             <div className="grid grid-cols-2 gap-3 border-l-4 border-l-blue-400 pl-3 rounded-sm">
               <div className="space-y-1">
                 <Label className="text-xs">TRIRIGA Module</Label>
-                <Select value={sourceModule} onValueChange={(v) => { setSourceModule(v); setSourceObject(""); setSourceObjectId(undefined); }} disabled={fetchAssociatedObjects}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select TRIRIGA Module..." /></SelectTrigger>
-                  <SelectContent>{modules.map((m) => <SelectItem key={m.name} value={m.name}>{m.label ?? m.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={modules.map((m) => ({ value: m.name, label: m.label ?? m.name }))}
+                  value={sourceModule}
+                  onValueChange={(v) => { setSourceModule(v); setSourceObject(""); setSourceObjectId(undefined); }}
+                  disabled={fetchAssociatedObjects}
+                  placeholder="Select TRIRIGA Module..."
+                  searchPlaceholder="Search modules..."
+                  widthClass="w-[300px]"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">TRIRIGA Business Object</Label>
-                <Select value={sourceObject} onValueChange={(v) => { setSourceObject(v); const bo = businessObjects.find((b) => b.name === v); setSourceObjectId(bo?.id ?? undefined); setAssocModule(""); setAssocObject(""); setAssocString(""); }} disabled={!sourceModule || boLoading || fetchAssociatedObjects}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."} /></SelectTrigger>
-                  <SelectContent>{businessObjects.map((bo) => <SelectItem key={bo.name} value={bo.name}>{bo.label ?? bo.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={businessObjects.map((bo) => ({ value: bo.name, label: bo.label ?? bo.name }))}
+                  value={sourceObject}
+                  onValueChange={(v) => { setSourceObject(v); const bo = businessObjects.find((b) => b.name === v); setSourceObjectId(bo?.id ?? undefined); setAssocModule(""); setAssocObject(""); setAssocString(""); }}
+                  disabled={!sourceModule || boLoading || fetchAssociatedObjects}
+                  placeholder={!sourceModule ? "Select TRIRIGA Module first..." : boLoading ? "Loading..." : "Select TRIRIGA Business Object..."}
+                  searchPlaceholder="Search business objects..."
+                  widthClass="w-[300px]"
+                />
               </div>
             </div>
 
@@ -340,24 +360,39 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               <div className="grid grid-cols-3 gap-3 border-l-4 border-l-purple-400 pl-3 rounded-sm">
                 <div className="space-y-1">
                   <Label className="text-xs">Associated TRIRIGA Module</Label>
-                  <Select value={assocModule} onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }} disabled={assocLoading}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={assocLoading ? "Loading..." : "Select Associated Module..."} /></SelectTrigger>
-                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocModuleOptions.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={assocModuleOptions.map((m) => ({ value: m, label: m }))}
+                    value={assocModule}
+                    onValueChange={(v) => { setAssocModule(v); setAssocObject(""); setAssocString(""); }}
+                    disabled={assocLoading}
+                    placeholder={assocLoading ? "Loading..." : "Select Associated Module..."}
+                    searchPlaceholder="Search modules..."
+                    widthClass="w-[240px]"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Associated TRIRIGA Business Object</Label>
-                  <Select value={assocObject} onValueChange={(v) => { setAssocObject(v); setAssocString(""); }} disabled={!assocModule}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."} /></SelectTrigger>
-                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocObjectOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={assocObjectOptions.map((o) => ({ value: o, label: o }))}
+                    value={assocObject}
+                    onValueChange={(v) => { setAssocObject(v); setAssocString(""); }}
+                    disabled={!assocModule}
+                    placeholder={!assocModule ? "Select Associated Module first..." : "Select Associated Business Object..."}
+                    searchPlaceholder="Search business objects..."
+                    widthClass="w-[240px]"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Association String</Label>
-                  <Select value={assocString} onValueChange={setAssocString} disabled={!assocObject}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={!assocObject ? "Select Associated Business Object first..." : "Select Association String..."} /></SelectTrigger>
-                    <SelectContent position="popper" className="max-h-72 overflow-y-auto">{assocStringOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={assocStringOptions.map((s) => ({ value: s, label: s }))}
+                    value={assocString}
+                    onValueChange={setAssocString}
+                    disabled={!assocObject}
+                    placeholder={!assocObject ? "Select Associated BO first..." : "Select Association..."}
+                    searchPlaceholder="Search associations..."
+                    widthClass="w-[240px]"
+                  />
                 </div>
               </div>
             )}

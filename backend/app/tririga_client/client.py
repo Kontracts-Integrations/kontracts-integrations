@@ -313,6 +313,65 @@ class TririgaClient:
             logger.error(f"get_associated_objects failed for objectTypeId={object_type_id}: {e}")
             raise
 
+    async def get_associated_records(
+        self,
+        record_id: int,
+        association_name: str,
+        max_results: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Call getAssociatedRecords to retrieve the IDs and names of associated records.
+        """
+        if self.demo_mode:
+            # Return a mock associated record for demo mode matching WATSON CENTER lease
+            return [{
+                "associatedRecordId": 10395650, 
+                "associatedRecordName": "Watson Center",
+                "moduleName": "Contract",
+                "objectTypeName": "triRealEstateContract"
+            }]
+
+        loop = asyncio.get_event_loop()
+        try:
+            client = await loop.run_in_executor(None, self._get_zeep_client)
+            result = await loop.run_in_executor(
+                None,
+                lambda: client.service.getAssociatedRecords(
+                    recordId=record_id,
+                    associationString=association_name,
+                    maxResults=max_results,
+                ),
+            )
+            from app.tririga_client.normalizer import normalize_soap_response
+            normalized = normalize_soap_response(result)
+
+            if isinstance(normalized, dict) and "out" in normalized:
+                normalized = normalized["out"]
+
+            if isinstance(normalized, dict):
+                items = normalized.get("Association", normalized.get("item", []))
+            elif isinstance(normalized, list):
+                items = normalized
+            else:
+                items = [normalized] if normalized else []
+
+            if not isinstance(items, list):
+                items = [items]
+
+            results = []
+            for item in items:
+                if isinstance(item, dict):
+                    results.append({
+                        "associatedRecordId": item.get("associatedRecordId"),
+                        "associatedRecordName": item.get("associatedRecordName"),
+                        "moduleName": item.get("moduleName"),
+                        "objectTypeName": item.get("objectTypeName"),
+                    })
+            return results
+        except Exception as e:
+            logger.error(f"getAssociatedRecords failed for record_id={record_id}: {e}")
+            return []
+
     async def run_named_query(
         self,
         module_name: str,

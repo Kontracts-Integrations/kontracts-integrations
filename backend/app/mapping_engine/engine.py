@@ -53,8 +53,12 @@ class MappingEngine:
             if not target_field:
                 continue
 
-            # Get source value (supports dotted paths)
-            source_value = _get_nested_value(source_record, source_field)
+            # Get source value (supports dotted paths and Associated BO fields)
+            if mapping.get("use_associated"):
+                assoc_data = source_record.get("Associated", {})
+                source_value = _get_nested_value(assoc_data, source_field)
+            else:
+                source_value = _get_nested_value(source_record, source_field)
 
             # Apply transform
             try:

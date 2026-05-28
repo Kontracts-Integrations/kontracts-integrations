@@ -47,6 +47,8 @@ services:
       dockerfile: Dockerfile
     container_name: tririga_kontracts_frontend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       WATCHPACK_POLLING: "true"

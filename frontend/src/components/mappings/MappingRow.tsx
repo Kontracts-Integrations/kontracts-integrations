@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { TransformEditor } from "./TransformEditor";
 import { cn } from "@/lib/utils";
 import { Trash2, ChevronDown, ChevronUp, GripVertical, ChevronsUpDown } from "lucide-react";
@@ -152,8 +152,9 @@ export function MappingRow({
         <span className="text-muted-foreground">→</span>
 
         {/* Transform type */}
-        <div className="w-40">
-          <Select
+        <div className="w-56">
+          <SearchableSelect
+            options={TRANSFORM_OPTIONS}
             value={mapping.transform_type}
             onValueChange={(v) => {
               update({
@@ -162,18 +163,10 @@ export function MappingRow({
               });
               setExpanded(v !== "direct" && v !== "boolean_convert");
             }}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TRANSFORM_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Transform type..."
+            searchPlaceholder="Search transform..."
+            widthClass="w-[280px]"
+          />
         </div>
 
         {/* Arrow */}
@@ -181,23 +174,20 @@ export function MappingRow({
 
         {/* Target field */}
         <div className="flex-1">
-          <Select
+          <SearchableSelect
+            options={[
+              { value: "__none__", label: "— none —" },
+              ...targetFields.map((f) => ({
+                value: f.name,
+                label: f.required ? `${f.name} *` : f.name,
+              })),
+            ]}
             value={mapping.target_field || "__none__"}
             onValueChange={(v) => update({ target_field: v === "__none__" ? "" : v })}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Target field..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— none —</SelectItem>
-              {targetFields.map((f) => (
-                <SelectItem key={f.name} value={f.name}>
-                  <span className="font-mono">{f.name}</span>
-                  {f.required && <span className="ml-1 text-red-500">*</span>}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Target field..."
+            searchPlaceholder="Search target fields..."
+            widthClass="w-[280px]"
+          />
         </div>
 
         {/* Required toggle */}

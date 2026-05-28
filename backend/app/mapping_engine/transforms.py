@@ -308,14 +308,21 @@ def _lease_lookup(value: Any, cfg: Dict, context: Dict) -> Any:
     if value is None:
         return cfg.get("default")
 
+    val_str = str(value)
+    # Match the lease ID pattern: e.g. EU-DE-FR-001 or EU-BG-BR-009-02 from full record name
+    match = re.match(r"^([A-Za-z0-9]+(?:-[A-Za-z0-9]+){3,4})-\d+-", val_str)
+    if match:
+        val_str = match.group(1)
+
     lease_map: Dict[str, str] = context.get("lease_mappings", {})
-    result = lease_map.get(str(value))
+    result = lease_map.get(val_str)
 
     if result is None:
-        logger.warning(f"lease_lookup: no kontracts_id found for tririga_record_id '{value}'")
+        logger.warning(f"lease_lookup: no kontracts_id found for tririga_record_id '{val_str}' (original: '{value}')")
         return cfg.get("default")
 
     return result
+
 
 
 def _json_path(value: Any, cfg: Dict, source_record: Dict) -> Any:
