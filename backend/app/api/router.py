@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api import connections, kontracts, logs, mappings, runs, source, tririga
+from app.api.dependencies.auth import verify_github_token
 
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(verify_github_token)])
 
 api_router.include_router(connections.router, prefix="/connections", tags=["connections"])
 api_router.include_router(source.router, prefix="/source", tags=["source"])

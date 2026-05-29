@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # Security
     fernet_key: Optional[str] = None
+    # Restrict API access to members of this GitHub org (leave unset to allow any valid GitHub user)
+    github_org: Optional[str] = None
 
     # CORS — defaults to * for local dev; set CORS_ORIGINS=https://... in production
     cors_origins: str = "*"
