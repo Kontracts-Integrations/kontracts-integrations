@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
-import { getSession } from "next-auth/react";
+import { getSession, signOut } from "next-auth/react";
 import type {
   Connection,
   ConnectionCreate,
@@ -32,15 +32,19 @@ const http: AxiosInstance = axios.create({
 
 http.interceptors.request.use(async (config) => {
   const session = await getSession();
-  if (session) {
-    config.headers["Authorization"] = `Bearer ${(session as { accessToken?: string }).accessToken ?? "authenticated"}`;
+  const token = (session as { accessToken?: string } | null)?.accessToken;
+  if (token) {
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
   return config;
 });
 
 http.interceptors.response.use(
   (r) => r,
-  (err: AxiosError) => {
+  async (err: AxiosError) => {
+    if (err.response?.status === 401) {
+      await signOut({ callbackUrl: "/login" });
+    }
     const detail =
       (err.response?.data as { detail?: string })?.detail || err.message;
     return Promise.reject(new Error(typeof detail === "string" ? detail : JSON.stringify(detail)));
