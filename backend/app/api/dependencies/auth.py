@@ -59,33 +59,44 @@ async def verify_github_token(
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get("https://api.github.com/user", headers=headers)
-
-    if resp.status_code != 200:
-        logger.warning("GitHub token validation failed (HTTP %s)", resp.status_code)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired GitHub token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user: dict = resp.json()
-
-    if settings.github_org:
+    try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            membership = await client.get(
-                f"https://api.github.com/orgs/{settings.github_org}/members/{user['login']}",
-                headers=headers,
-            )
-        if membership.status_code != 204:
-            logger.warning(
-                "User %s is not a member of org %s", user.get("login"), settings.github_org
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access restricted to members of the {settings.github_org} GitHub organisation",
-            )
+            resp = await client.get("https://api.github.com/user", headers=headers)
+
+            if resp.status_code != 200:
+                logger.warning("GitHub token validation failed (HTTP %s)", resp.status_code)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired GitHub token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            user: dict = resp.json()
+
+            if settings.github_org:
+                # Uses GET /orgs/{org}/members/{username} which returns 204 for public
+                # members and 404 for non-members. Private org members who have chosen
+                # to keep their membership private will also receive 404 and will be
+                # incorrectly denied. Switching to /orgs/{org}/memberships/{username}
+                # would fix this but requires an org admin token on the server side.
+                membership = await client.get(
+                    f"https://api.github.com/orgs/{settings.github_org}/members/{user['login']}",
+                    headers=headers,
+                )
+                if membership.status_code != 204:
+                    logger.warning(
+                        "User %s is not a member of org %s", user.get("login"), settings.github_org
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Access restricted to members of the {settings.github_org} GitHub organisation",
+                    )
+    except httpx.HTTPError as exc:
+        logger.error("GitHub API unreachable: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach GitHub API for token validation",
+        ) from exc
 
     _set_cached(token, user)
     logger.debug("Authenticated GitHub user: %s", user.get("login"))
