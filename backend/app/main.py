@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
@@ -23,6 +24,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    swagger_ui_parameters={"persistAuthorization": True},
 )
 
 app.add_middleware(
@@ -43,6 +45,39 @@ async def health_check():
     )
 
 
+def _build_openapi_schema() -> dict:
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    schema.setdefault("components", {})
+    schema["components"]["securitySchemes"] = {
+        "GitHubToken": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "GitHub OAuth Token",
+            "description": (
+                "GitHub OAuth access token issued after signing in with GitHub via NextAuth. "
+                "Paste the value of `session.accessToken` from your browser session, "
+                "or use a GitHub personal access token with the `read:user` scope."
+            ),
+        }
+    }
+
+    # Apply the security requirement to every operation under /api/v1.
+    # /health is intentionally left public.
+    for path, path_item in schema.get("paths", {}).items():
+        if path.startswith("/api/v1"):
+            for operation in path_item.values():
+                if isinstance(operation, dict):
+                    operation["security"] = [{"GitHubToken": []}]
+
+    return schema
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("TRIRIGA-Kontracts Integration API starting up")
@@ -52,6 +87,8 @@ async def startup_event():
         logger.warning(
             "FERNET_KEY not set — credentials will not be encrypted properly"
         )
+    # Cache the OpenAPI schema once at startup so it is consistent.
+    app.openapi_schema = _build_openapi_schema()
     await _mark_orphaned_runs_failed()
 
 
