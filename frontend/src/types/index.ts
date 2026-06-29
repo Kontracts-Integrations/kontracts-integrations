@@ -164,8 +164,15 @@ export interface SyncRecord {
   created_at: string;
 }
 
+export interface GroupedRecord {
+  status: string;
+  error_message: string | null;
+  count: number;
+  examples: string[];
+}
+
 export interface SyncRunDetail extends SyncRun {
-  records: SyncRecord[];
+  grouped_records: GroupedRecord[];
   logs: LogEntry[];
 }
 

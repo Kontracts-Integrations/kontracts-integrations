@@ -42,7 +42,6 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_db)):
         select(SyncRun)
         .where(SyncRun.id == run_id)
         .options(
-            selectinload(SyncRun.records),
             selectinload(SyncRun.log_entries),
         )
     )
@@ -50,7 +49,57 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="Sync run not found")
 
-    from app.schemas.sync_run import LogEntryResponse, SyncRecordResponse
+    from app.models.sync_run import SyncRecord
+    from sqlalchemy import func, desc, cast, String
+    from app.schemas.sync_run import LogEntryResponse, GroupedRecordResponse
+
+    # Deduplicate by tririga_record_id first using DISTINCT ON (keeps latest entry via id DESC)
+    # If tririga_record_id is null, fall back to record id to prevent grouping nulls together
+    distinct_expr = func.coalesce(SyncRecord.tririga_record_id, cast(SyncRecord.id, String))
+    subquery = (
+        select(
+            SyncRecord.status,
+            SyncRecord.error_message,
+            SyncRecord.tririga_record_id
+        )
+        .distinct(distinct_expr)
+        .where(SyncRecord.run_id == run_id)
+        .order_by(distinct_expr, desc(SyncRecord.id))
+        .subquery()
+    )
+
+    # Query grouped sync records from deduplicated subquery
+    records_query = (
+        select(
+            subquery.c.status,
+            subquery.c.error_message,
+            func.count(subquery.c.tririga_record_id).label("count"),
+            func.array_agg(subquery.c.tririga_record_id).label("examples")
+        )
+        .group_by(subquery.c.status, subquery.c.error_message)
+    )
+    records_result = await db.execute(records_query)
+
+    grouped_records = []
+    for row in records_result:
+        # Deduplicate and limit example tririga record IDs
+        seen_examples = set()
+        examples = []
+        if row.examples:
+            for ex in row.examples:
+                if ex and ex not in seen_examples:
+                    seen_examples.add(ex)
+                    examples.append(ex)
+                    if len(examples) >= 10:
+                        break
+        grouped_records.append(
+            GroupedRecordResponse(
+                status=row.status.value,
+                error_message=row.error_message,
+                count=row.count,
+                examples=examples
+            )
+        )
 
     return SyncRunDetailResponse(
         id=run.id,
@@ -65,7 +114,7 @@ async def get_run(run_id: int, db: AsyncSession = Depends(get_db)):
         started_at=run.started_at,
         completed_at=run.completed_at,
         created_at=run.created_at,
-        records=[SyncRecordResponse.model_validate(r) for r in run.records],
+        grouped_records=grouped_records,
         logs=[LogEntryResponse.model_validate(l) for l in run.log_entries],
     )
 
@@ -155,6 +204,97 @@ async def cancel_run(
     await db.commit()
     await db.refresh(run)
     return run
+
+
+@router.get("/{run_id}/export")
+async def export_run_records(
+    run_id: int,
+    status: Optional[str] = None,
+    error_message: Optional[List[str]] = Query(None),
+    category: Optional[str] = Query(None)
+):
+    from fastapi.responses import StreamingResponse
+    import io
+    import csv
+    from app.database import AsyncSessionLocal
+
+    async def csv_generator():
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Mapping Template", "TRIRIGA Record ID", "Status", "Error / Reason", "Created At"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        # Open its own separate database session to prevent FastAPI from cleaning it up prematurely
+        async with AsyncSessionLocal() as local_db:
+            from sqlalchemy.orm import selectinload
+            run_result = await local_db.execute(
+                select(SyncRun)
+                .options(selectinload(SyncRun.mapping_template))
+                .where(SyncRun.id == run_id)
+            )
+            run = run_result.scalar_one_or_none()
+            if not run:
+                return
+
+            mapping_template_name = run.mapping_template.name if run.mapping_template else "Unknown"
+
+            from app.models.sync_run import SyncRecord
+            from sqlalchemy import func, desc, cast, String
+
+            # Deduplicate by tririga_record_id first using DISTINCT ON (keeps latest entry via id DESC)
+            distinct_expr = func.coalesce(SyncRecord.tririga_record_id, cast(SyncRecord.id, String))
+            subquery = (
+                select(
+                    SyncRecord.tririga_record_id,
+                    SyncRecord.status,
+                    SyncRecord.error_message,
+                    SyncRecord.created_at,
+                    SyncRecord.id
+                )
+                .distinct(distinct_expr)
+                .where(SyncRecord.run_id == run_id)
+                .order_by(distinct_expr, desc(SyncRecord.id))
+                .subquery()
+            )
+
+            query = select(
+                subquery.c.tririga_record_id,
+                subquery.c.status,
+                subquery.c.error_message,
+                subquery.c.created_at
+            )
+
+            if status:
+                query = query.where(subquery.c.status == status)
+            if error_message:
+                query = query.where(subquery.c.error_message.in_(error_message))
+
+            query = query.order_by(subquery.c.id.asc())
+
+            result = await local_db.stream(query)
+            async for row in result:
+                writer.writerow([
+                    mapping_template_name,
+                    row.tririga_record_id or "",
+                    row.status.value,
+                    row.error_message or "",
+                    row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else ""
+                ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+    filename = f"run {run_id} - export.csv"
+    if category:
+        filename = f"run {run_id} - {category}.csv"
+
+    return StreamingResponse(
+        csv_generator(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 async def _execute_sync_run(run_id: int) -> None:

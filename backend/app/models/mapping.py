@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -61,14 +61,14 @@ class MappingTemplate(Base):
         back_populates="target_mappings",
         lazy="select",
     )
-    versions: Mapped[list] = relationship(
+    versions: Mapped[List["MappingVersion"]] = relationship(
         "MappingVersion",
         back_populates="template",
         lazy="select",
         uselist=True,
         cascade="all, delete-orphan",
     )
-    sync_runs: Mapped[list] = relationship(
+    sync_runs: Mapped[List["SyncRun"]] = relationship(
         "SyncRun",
         back_populates="mapping_template",
         lazy="select",

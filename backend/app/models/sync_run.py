@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -56,13 +56,13 @@ class SyncRun(Base):
     mapping_template: Mapped[Optional[Any]] = relationship(
         "MappingTemplate", back_populates="sync_runs", lazy="select"
     )
-    records: Mapped[list] = relationship(
+    records: Mapped[List["SyncRecord"]] = relationship(
         "SyncRecord",
         back_populates="run",
         order_by="SyncRecord.id",
         lazy="select",
     )
-    log_entries: Mapped[list] = relationship(
+    log_entries: Mapped[List["LogEntry"]] = relationship(
         "LogEntry",
         back_populates="run",
         order_by="LogEntry.created_at",

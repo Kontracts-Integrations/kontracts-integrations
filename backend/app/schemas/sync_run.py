@@ -54,6 +54,15 @@ class LogEntryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GroupedRecordResponse(BaseModel):
+    status: str
+    error_message: Optional[str] = None
+    count: int
+    examples: List[str] = []
+
+    model_config = {"from_attributes": True}
+
+
 class SyncRunDetailResponse(SyncRunResponse):
-    records: List[SyncRecordResponse] = []
+    grouped_records: List[GroupedRecordResponse] = []
     logs: List[LogEntryResponse] = []

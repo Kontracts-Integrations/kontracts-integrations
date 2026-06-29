@@ -10,19 +10,24 @@ import { RunDetail } from "@/components/runs/RunDetail";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { cn, getStatusColor, formatDuration } from "@/lib/utils";
+import { Loader2, RefreshCw, X, Clock } from "lucide-react";
 
 export default function RunsPage() {
   const qc = useQueryClient();
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [mappingFilter, setMappingFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
+  const [runSearchText, setRunSearchText] = useState("");
 
-  const hasFilters = statusFilter !== "all" || mappingFilter !== "all";
+  const hasFilters = statusFilter !== "all" || mappingFilter !== "all" || searchText !== "" || runSearchText !== "";
 
   function resetFilters() {
     setStatusFilter("all");
     setMappingFilter("all");
+    setSearchText("");
+    setRunSearchText("");
   }
 
   const cancelMutation = useMutation({
@@ -78,8 +83,12 @@ export default function RunsPage() {
             mappings={mappings ?? []}
             statusFilter={statusFilter}
             mappingFilter={mappingFilter}
+            searchText={searchText}
+            runSearchText={runSearchText}
             onStatusFilterChange={setStatusFilter}
             onMappingFilterChange={setMappingFilter}
+            onSearchTextChange={setSearchText}
+            onRunSearchTextChange={setRunSearchText}
             onSelect={setSelectedRunId}
             onCancel={(runId) => cancelMutation.mutate(runId)}
           />
@@ -87,14 +96,44 @@ export default function RunsPage() {
       </div>
 
       {/* Run detail dialog */}
-      <Dialog open={selectedRunId !== null} onOpenChange={(o) => !o && setSelectedRunId(null)}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Run #{selectedRunId} Details</DialogTitle>
-          </DialogHeader>
-          {selectedRunId && <RunDetail runId={selectedRunId} />}
-        </DialogContent>
-      </Dialog>
+      {(() => {
+        const selectedRun = runs?.find((r) => r.id === selectedRunId);
+        return (
+          <Dialog open={selectedRunId !== null} onOpenChange={(o) => !o && setSelectedRunId(null)}>
+            <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+              <DialogHeader className="shrink-0 pb-2 border-b flex flex-row items-center justify-between pr-8">
+                <DialogTitle className="flex items-center gap-2.5">
+                  <span>Run #{selectedRunId}</span>
+                  {selectedRun && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                        getStatusColor(selectedRun.status)
+                      )}
+                    >
+                      {selectedRun.status}
+                    </span>
+                  )}
+                </DialogTitle>
+                {selectedRun && (
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground font-medium">
+                    <Clock className="h-4 w-4 text-zinc-400" />
+                    <span>{formatDuration(selectedRun.started_at, selectedRun.completed_at)}</span>
+                  </div>
+                )}
+              </DialogHeader>
+          <div className="overflow-y-auto flex-1 pr-1 mt-4">
+            {selectedRunId && (
+              <RunDetail
+                runId={selectedRunId}
+                mappingName={mappings?.find(m => m.id === selectedRun?.mapping_template_id)?.name || "Unknown Template"}
+              />
+            )}
+          </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </MainLayout>
   );
 }

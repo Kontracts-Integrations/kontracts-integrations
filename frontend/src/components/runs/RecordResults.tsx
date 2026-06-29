@@ -1,102 +1,107 @@
 "use client";
 
-import { useState } from "react";
 import { cn, getStatusColor } from "@/lib/utils";
-import type { SyncRecord } from "@/types";
 
 interface Props {
-  records: SyncRecord[];
+  groupedRecords: {
+    status: string;
+    error_message: string | null;
+    count: number;
+    examples: string[];
+  }[];
+  successCount: number;
 }
 
-function RecordRow({ record }: { record: SyncRecord }) {
-  const [expanded, setExpanded] = useState(false);
+export function RecordResults({ groupedRecords, successCount }: Props) {
+  const summaries = (groupedRecords || [])
+    .filter((gr) => gr.status !== "success")
+    .map((gr) => ({
+      status: gr.status as "failed" | "skipped",
+      reason: gr.error_message || "Unknown error/reason",
+      count: gr.count,
+      examples: gr.examples,
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  return (
-    <>
-      <tr
-        className="cursor-pointer border-b hover:bg-muted/50"
-        onClick={() => setExpanded((e) => !e)}
-      >
-        <td className="p-3 text-sm font-mono text-muted-foreground">
-          {record.tririga_record_id ?? "—"}
-        </td>
-        <td className="p-3 text-sm font-mono text-muted-foreground">
-          {record.kontracts_record_id ?? "—"}
-        </td>
-        <td className="p-3">
-          <span
-            className={cn(
-              "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-              getStatusColor(record.status)
-            )}
-          >
-            {record.status}
-          </span>
-        </td>
-        <td className="p-3 text-sm text-muted-foreground">
-          {record.error_message ? (
-            <span className="text-red-500">{record.error_message}</span>
-          ) : (
-            "—"
-          )}
-        </td>
-        <td className="p-3 text-center text-xs text-muted-foreground">
-          {expanded ? "▲" : "▼"}
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="border-b bg-muted/20">
-          <td colSpan={5} className="p-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="mb-1 text-xs font-semibold text-muted-foreground">
-                  Source Data (TRIRIGA)
-                </p>
-                <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                  {JSON.stringify(record.source_data ?? {}, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <p className="mb-1 text-xs font-semibold text-muted-foreground">
-                  Mapped Data (Kontracts)
-                </p>
-                <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                  {JSON.stringify(record.mapped_data ?? {}, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
+  const totalCount = successCount + summaries.reduce((acc, curr) => acc + curr.count, 0);
 
-export function RecordResults({ records }: Props) {
-  if (!records.length) {
+  if (totalCount === 0) {
     return (
-      <p className="py-4 text-center text-sm text-muted-foreground">No records to display.</p>
+      <p className="py-8 text-center text-sm text-muted-foreground">No records to display.</p>
     );
   }
 
   return (
-    <div className="overflow-auto rounded-lg border">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b bg-muted/50 text-left">
-            <th className="p-3 text-xs font-semibold text-muted-foreground">TRIRIGA ID</th>
-            <th className="p-3 text-xs font-semibold text-muted-foreground">Kontracts ID</th>
-            <th className="p-3 text-xs font-semibold text-muted-foreground">Status</th>
-            <th className="p-3 text-xs font-semibold text-muted-foreground">Error</th>
-            <th className="p-3 text-xs font-semibold text-muted-foreground" />
-          </tr>
-        </thead>
-        <tbody>
-          {records.map((r) => (
-            <RecordRow key={r.id} record={r} />
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {/* Success summary banner */}
+      {successCount > 0 && (
+        <div className="rounded-lg border border-green-100 bg-green-50/30 p-3 text-sm text-green-800 dark:border-green-900/30 dark:bg-green-950/10 dark:text-green-400 flex items-center justify-between">
+          <span className="font-medium">
+            ✅ {successCount.toLocaleString()} records were successfully synced to Kontracts.
+          </span>
+        </div>
+      )}
+
+      {/* Grouped summary table */}
+      <div className="overflow-auto rounded-lg border">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b bg-muted/50 text-left">
+              <th className="p-3 text-xs font-semibold text-muted-foreground w-28">Status</th>
+              <th className="p-3 text-xs font-semibold text-muted-foreground">Error / Reason</th>
+              <th className="p-3 text-xs font-semibold text-muted-foreground w-32 text-right">Count</th>
+              <th className="p-3 text-xs font-semibold text-muted-foreground">Example TRIRIGA Record IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summaries.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="p-4 text-center text-sm text-muted-foreground">
+                  No failed or skipped records in this run.
+                </td>
+              </tr>
+            ) : (
+              summaries.map((summary, idx) => (
+                <tr key={idx} className="border-b hover:bg-muted/30">
+                  <td className="p-3 align-top">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase",
+                        getStatusColor(summary.status)
+                      )}
+                    >
+                      {summary.status}
+                    </span>
+                  </td>
+                  <td className="p-3 text-sm text-foreground align-top break-words max-w-lg font-mono text-xs">
+                    {summary.reason}
+                  </td>
+                  <td className="p-3 text-sm font-semibold text-right align-top">
+                    {summary.count.toLocaleString()}
+                  </td>
+                  <td className="p-3 align-top">
+                    <div className="flex flex-wrap gap-1">
+                      {summary.examples.map((id) => (
+                        <span
+                          key={id}
+                          className="inline-flex items-center rounded border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+                        >
+                          {id}
+                        </span>
+                      ))}
+                      {summary.count > summary.examples.length && (
+                        <span className="text-xs text-muted-foreground self-center ml-1">
+                          + {(summary.count - summary.examples.length).toLocaleString()} more
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
