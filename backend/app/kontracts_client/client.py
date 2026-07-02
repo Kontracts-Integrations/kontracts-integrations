@@ -103,12 +103,12 @@ class KontractsClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def _post(self, path: str, data: Dict) -> Any:
+    async def _post(self, path: str, data: Dict, params: Optional[Dict] = None) -> Any:
         headers = await self._headers()
         logger.info("POST %s payload: %s", path, data)
         async with httpx.AsyncClient(timeout=60) as http:
             resp = await http.post(
-                f"{self.base_url}{path}", headers=headers, json=data
+                f"{self.base_url}{path}", headers=headers, json=data, params=params
             )
             if resp.is_error:
                 logger.error(
@@ -117,11 +117,11 @@ class KontractsClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def _put(self, path: str, data: Dict) -> Any:
+    async def _put(self, path: str, data: Dict, params: Optional[Dict] = None) -> Any:
         headers = await self._headers()
         async with httpx.AsyncClient(timeout=60) as http:
             resp = await http.put(
-                f"{self.base_url}{path}", headers=headers, json=data
+                f"{self.base_url}{path}", headers=headers, json=data, params=params
             )
             resp.raise_for_status()
             return resp.json()
@@ -208,16 +208,17 @@ class KontractsClient:
 
         method = method.upper()
         is_bulk = "bulk" in endpoint
+        params = {"partial": "true"} if is_bulk else None
 
         if method == "POST":
             final_payload = [payload] if is_bulk else payload
-            res = await self._post(endpoint, final_payload)
+            res = await self._post(endpoint, final_payload, params=params)
             if is_bulk and isinstance(res, dict) and "payments" in res and len(res["payments"]) > 0:
                 return res["payments"][0]
             return res
         elif method in ("PUT", "PATCH"):
             final_payload = [payload] if is_bulk else payload
-            res = await self._put(endpoint, final_payload)
+            res = await self._put(endpoint, final_payload, params=params)
             if is_bulk and isinstance(res, dict) and "payments" in res and len(res["payments"]) > 0:
                 return res["payments"][0]
             return res
@@ -237,9 +238,10 @@ class KontractsClient:
             }
 
         method = method.upper()
+        params = {"partial": "true"}
         if method == "POST":
-            return await self._post(endpoint, payloads)
+            return await self._post(endpoint, payloads, params=params)
         elif method in ("PUT", "PATCH"):
-            return await self._put(endpoint, payloads)
+            return await self._put(endpoint, payloads, params=params)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
