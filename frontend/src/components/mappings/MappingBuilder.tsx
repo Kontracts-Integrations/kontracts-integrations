@@ -13,8 +13,9 @@ import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId, cn } from "@/lib/utils";
-import { Plus, Save, Loader2, Pencil, Trash2, Filter } from "lucide-react";
-import type { FieldMapping, MappingTemplate, SourceField, KontractsField, SourceFilter, FilterOperator } from "@/types";
+import { toast } from "@/components/ui/toaster";
+import { Plus, Save, Loader2, Pencil, Trash2, Filter, ListChecks } from "lucide-react";
+import type { FieldMapping, MappingTemplate, SourceField, KontractsField, SourceFilter, FilterOperator, TransformType } from "@/types";
 
 const FILTER_OPERATORS: { value: FilterOperator; label: string; needsValue: boolean }[] = [
   { value: "equals", label: "equals", needsValue: true },
@@ -240,6 +241,40 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   };
   const removeFilter = (index: number) => {
     setSourceFilters((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Scaffold a mapping row for each required target field (from the OpenAPI spec)
+  // that isn't mapped yet. Date fields default to the date_format transform.
+  const addRequiredFields = () => {
+    const mapped = new Set(mappings.map((m) => m.target_field).filter(Boolean));
+    const missing = targetFields.filter((f) => f.required && !mapped.has(f.name));
+    if (missing.length === 0) {
+      toast({
+        title: "Nothing to add",
+        description: targetFields.some((f) => f.required)
+          ? "All required fields are already mapped."
+          : "This endpoint has no required fields in the OpenAPI spec.",
+      });
+      return;
+    }
+    const isDate = (f: KontractsField) =>
+      f.format === "date" || f.format === "date-time" || /date/i.test(f.name);
+    setMappings((prev) => [
+      ...prev,
+      ...missing.map((f) => ({
+        id: generateId(),
+        source_field: "",
+        target_field: f.name,
+        transform_type: (isDate(f) ? "date_format" : "direct") as TransformType,
+        transform_config: isDate(f) ? { output_format: "%Y-%m-%d" } : null,
+        is_required: true,
+        use_associated: false,
+      })),
+    ]);
+    toast({
+      title: `Added ${missing.length} required field${missing.length > 1 ? "s" : ""}`,
+      description: "Select the source field for each new row, then Save Mappings.",
+    });
   };
 
   const addAssocRow = () => {
@@ -597,6 +632,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             <Button variant="outline" size="sm" onClick={addRow} className="border-blue-400 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950">
               <Plus className="mr-1 h-4 w-4" />
               Add Mapping (Base BO)
+            </Button>
+            <Button variant="outline" size="sm" onClick={addRequiredFields} disabled={!kontractsEndpoint || targetLoading} className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950">
+              <ListChecks className="mr-1 h-4 w-4" />
+              Add Required Fields
             </Button>
             {fetchAssociatedObjects && (
               <Button variant="outline" size="sm" onClick={addAssocRow} className="border-purple-400 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950">
