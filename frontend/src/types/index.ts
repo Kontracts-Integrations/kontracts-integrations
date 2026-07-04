@@ -60,9 +60,31 @@ export interface FieldMapping {
   target_field: string;
   transform_type: TransformType;
   transform_config?: Record<string, unknown> | null;
+  default_value?: string | null;
   is_required: boolean;
   description?: string | null;
   use_associated?: boolean;
+}
+
+export type FilterOperator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "not_contains"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "greater_than"
+  | "less_than"
+  | "gte"
+  | "lte"
+  | "regex";
+
+export interface SourceFilter {
+  field: string;
+  operator: FilterOperator;
+  value?: string | null;
 }
 
 export interface MappingVersion {
@@ -85,6 +107,11 @@ export interface MappingTemplate {
   source_query: string | null;
   kontracts_endpoint: string | null;
   kontracts_method: string | null;
+  lookup_table_name: string | null;
+  update_existing: boolean;
+  lookup_key_fields: string[];
+  source_filters: SourceFilter[];
+  filter_match: string;
   fetch_associated: boolean;
   assoc_module: string | null;
   assoc_object: string | null;
@@ -105,6 +132,11 @@ export interface MappingTemplateCreate {
   source_query?: string | null;
   kontracts_endpoint?: string | null;
   kontracts_method?: string;
+  lookup_table_name?: string | null;
+  update_existing?: boolean;
+  lookup_key_fields?: string[];
+  source_filters?: SourceFilter[];
+  filter_match?: string;
   field_mappings: FieldMapping[];
   fetch_associated?: boolean;
   assoc_module?: string | null;
@@ -122,6 +154,11 @@ export interface MappingTemplateUpdate {
   source_query?: string | null;
   kontracts_endpoint?: string | null;
   kontracts_method?: string;
+  lookup_table_name?: string | null;
+  update_existing?: boolean;
+  lookup_key_fields?: string[];
+  source_filters?: SourceFilter[];
+  filter_match?: string;
   fetch_associated?: boolean;
   assoc_module?: string | null;
   assoc_object?: string | null;

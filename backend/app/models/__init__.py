@@ -3,6 +3,7 @@ from app.models.connection import Connection
 from app.models.lease_mapping import LeaseMapping
 from app.models.log_entry import LogEntry
 from app.models.mapping import MappingTemplate, MappingVersion
+from app.models.record_sync_state import RecordSyncState
 from app.models.sync_run import SyncRecord, SyncRun
 
 __all__ = [
@@ -11,6 +12,7 @@ __all__ = [
     "LeaseMapping",
     "MappingTemplate",
     "MappingVersion",
+    "RecordSyncState",
     "SyncRun",
     "SyncRecord",
     "LogEntry",

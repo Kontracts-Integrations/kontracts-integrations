@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Input } from "@/components/ui/input";
 import { TransformEditor } from "./TransformEditor";
 import { cn } from "@/lib/utils";
 import { Trash2, ChevronDown, ChevronUp, GripVertical, ChevronsUpDown } from "lucide-react";
@@ -187,6 +188,17 @@ export function MappingRow({
             placeholder="Target field..."
             searchPlaceholder="Search target fields..."
             widthClass="w-[280px]"
+          />
+        </div>
+
+        {/* Default value (used when source is empty/null) */}
+        <div className="w-32 flex-shrink-0">
+          <Input
+            className="h-8 text-xs"
+            value={mapping.default_value ?? ""}
+            onChange={(e) => update({ default_value: e.target.value || null })}
+            placeholder="default"
+            title="Default value when the source field is empty or null"
           />
         </div>
 

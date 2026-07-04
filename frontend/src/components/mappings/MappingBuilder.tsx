@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sourceApi, kontractsApi, connectionsApi, mappingsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId, cn } from "@/lib/utils";
-import { Plus, Save, Loader2, Pencil } from "lucide-react";
-import type { FieldMapping, MappingTemplate, SourceField, KontractsField } from "@/types";
+import { toast } from "@/components/ui/toaster";
+import { Plus, Save, Loader2, Pencil, Trash2, Filter, ListChecks, Check, X, KeyRound } from "lucide-react";
+import type { FieldMapping, MappingTemplate, SourceField, KontractsField, SourceFilter, FilterOperator, TransformType } from "@/types";
+
+const FILTER_OPERATORS: { value: FilterOperator; label: string; needsValue: boolean }[] = [
+  { value: "equals", label: "equals", needsValue: true },
+  { value: "not_equals", label: "not equals", needsValue: true },
+  { value: "contains", label: "contains", needsValue: true },
+  { value: "not_contains", label: "does not contain", needsValue: true },
+  { value: "starts_with", label: "starts with", needsValue: true },
+  { value: "ends_with", label: "ends with", needsValue: true },
+  { value: "is_empty", label: "is empty", needsValue: false },
+  { value: "is_not_empty", label: "is not empty", needsValue: false },
+  { value: "greater_than", label: "greater than", needsValue: true },
+  { value: "less_than", label: "less than", needsValue: true },
+  { value: "gte", label: "≥", needsValue: true },
+  { value: "lte", label: "≤", needsValue: true },
+  { value: "regex", label: "matches regex", needsValue: true },
+];
 
 interface Props {
   template: MappingTemplate;
@@ -27,6 +46,11 @@ interface Props {
       source_query?: string | null;
       kontracts_endpoint?: string | null;
       kontracts_method?: string;
+      lookup_table_name?: string | null;
+      lookup_key_fields?: string[];
+      update_existing?: boolean;
+      source_filters?: SourceFilter[];
+      filter_match?: string;
       field_mappings: FieldMapping[];
       source_connection_id?: number | null;
       target_connection_id?: number | null;
@@ -48,6 +72,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [sourceQuery, setSourceQuery] = useState(template.source_query ?? "");
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
+  const [lookupTableName, setLookupTableName] = useState(template.lookup_table_name ?? "");
+  const [lookupKeyFields, setLookupKeyFields] = useState<string[]>(template.lookup_key_fields ?? []);
+  const [lookupKeyOpen, setLookupKeyOpen] = useState(false);
+  const [updateExisting, setUpdateExisting] = useState(template.update_existing ?? false);
+  const [sourceFilters, setSourceFilters] = useState<SourceFilter[]>(template.source_filters ?? []);
+  const [filterMatch, setFilterMatch] = useState(template.filter_match ?? "all");
   const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
   const [sourceObjectId, setSourceObjectId] = useState<number | undefined>(undefined);
   const [assocModule, setAssocModule] = useState(template.assoc_module ?? "");
@@ -74,6 +104,11 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setSourceQuery(template.source_query ?? "");
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
     setKontractsMethod(template.kontracts_method ?? "POST");
+    setLookupTableName(template.lookup_table_name ?? "");
+    setLookupKeyFields(template.lookup_key_fields ?? []);
+    setUpdateExisting(template.update_existing ?? false);
+    setSourceFilters(template.source_filters ?? []);
+    setFilterMatch(template.filter_match ?? "all");
     setSourceConnId(template.source_connection_id ?? undefined);
     setTargetConnId(template.target_connection_id ?? undefined);
     setFetchAssociatedObjects(template.fetch_associated ?? false);
@@ -161,11 +196,24 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     queryFn: () => kontractsApi.getEndpoints(targetConnId),
   });
 
-  // Preview data (source records)
-  const { data: previewData } = useQuery({
-    queryKey: ["source-preview", sourceObject, sourceQuery, sourceConnId],
-    queryFn: () => sourceApi.preview(sourceObject, sourceQuery, sourceConnId),
-    enabled: !!sourceObject && !!sourceQuery,
+  // Preview data (source records) — fetched via the same dynamic query the sync
+  // uses: module + object + the source fields referenced by the mappings.
+  const previewFieldNames = useMemo(
+    () => mappings.map((m) => m.source_field).filter((f): f is string => !!f),
+    [mappings]
+  );
+  const activeFilters = useMemo(
+    () => sourceFilters.filter((f) => f.field),
+    [sourceFilters]
+  );
+  const {
+    data: previewData,
+    isFetching: previewLoading,
+    error: previewError,
+  } = useQuery({
+    queryKey: ["source-preview", sourceObject, sourceModule, previewFieldNames.join(","), sourceConnId, JSON.stringify(activeFilters), filterMatch],
+    queryFn: () => sourceApi.preview(sourceObject, sourceModule || undefined, previewFieldNames, sourceConnId, activeFilters, filterMatch),
+    enabled: !!sourceObject,
   });
 
   // Mapped preview — apply current field mappings to source records via the backend engine
@@ -189,6 +237,50 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
         use_associated: false,
       },
     ]);
+  };
+
+  const addFilter = () => {
+    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "" }]);
+  };
+  const updateFilter = (index: number, patch: Partial<SourceFilter>) => {
+    setSourceFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  };
+  const removeFilter = (index: number) => {
+    setSourceFilters((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Scaffold a mapping row for each required target field (from the OpenAPI spec)
+  // that isn't mapped yet. Date fields default to the date_format transform.
+  const addRequiredFields = () => {
+    const mapped = new Set(mappings.map((m) => m.target_field).filter(Boolean));
+    const missing = targetFields.filter((f) => f.required && !mapped.has(f.name));
+    if (missing.length === 0) {
+      toast({
+        title: "Nothing to add",
+        description: targetFields.some((f) => f.required)
+          ? "All required fields are already mapped."
+          : "This endpoint has no required fields in the OpenAPI spec.",
+      });
+      return;
+    }
+    const isDate = (f: KontractsField) =>
+      f.format === "date" || f.format === "date-time" || /date/i.test(f.name);
+    setMappings((prev) => [
+      ...prev,
+      ...missing.map((f) => ({
+        id: generateId(),
+        source_field: "",
+        target_field: f.name,
+        transform_type: (isDate(f) ? "date_format" : "direct") as TransformType,
+        transform_config: isDate(f) ? { output_format: "%Y-%m-%d" } : null,
+        is_required: true,
+        use_associated: false,
+      })),
+    ]);
+    toast({
+      title: `Added ${missing.length} required field${missing.length > 1 ? "s" : ""}`,
+      description: "Select the source field for each new row, then Save Mappings.",
+    });
   };
 
   const addAssocRow = () => {
@@ -225,6 +317,11 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     source_query: sourceQuery || null,
     kontracts_endpoint: kontractsEndpoint || null,
     kontracts_method: kontractsMethod,
+    lookup_table_name: lookupTableName.trim() || null,
+    lookup_key_fields: lookupKeyFields,
+    update_existing: updateExisting,
+    source_filters: sourceFilters.filter((f) => f.field),
+    filter_match: filterMatch,
     field_mappings: mappings,
     source_connection_id: sourceConnId ?? null,
     target_connection_id: targetConnId ?? null,
@@ -318,6 +415,127 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                   widthClass="w-[280px]"
                 />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Lookup Table Name</Label>
+                <Input
+                  className="w-[240px]"
+                  value={lookupTableName}
+                  onChange={(e) => setLookupTableName(e.target.value)}
+                  placeholder="e.g. lease_mappings"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Names the table this mapping writes created IDs into, so later mappings can look them up.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Re-run Behavior</Label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer pt-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-primary"
+                    checked={updateExisting}
+                    onChange={(e) => setUpdateExisting(e.target.checked)}
+                  />
+                  Update changed records on re-run
+                </label>
+                <p className="text-[10px] text-muted-foreground">
+                  When on, subsequent runs PUT records whose mapped payload changed instead of skipping them.
+                </p>
+              </div>
+            </div>
+
+            {/* Lookup Key Fields — source fields indexed for later target-id lookups */}
+            <div className="space-y-1 border-l-4 border-l-amber-400 pl-3 rounded-sm">
+              <Label className="flex items-center gap-1.5 text-xs">
+                <KeyRound className="h-3.5 w-3.5 text-amber-500" />
+                Lookup Key Fields
+              </Label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {lookupKeyFields.map((f) => {
+                  const [sec, nm] = f.includes("||") ? f.split("||", 2) : ["", f];
+                  return (
+                    <span
+                      key={f}
+                      className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                    >
+                      {sec && <span className="opacity-60">{sec}::</span>}
+                      <span className="font-mono">{nm}</span>
+                      <button
+                        type="button"
+                        onClick={() => setLookupKeyFields((prev) => prev.filter((x) => x !== f))}
+                        className="opacity-60 hover:opacity-100"
+                        title="Remove key field"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+                <Popover open={lookupKeyOpen} onOpenChange={setLookupKeyOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      role="combobox"
+                      disabled={sourceLoading}
+                      className="h-7 text-xs"
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      {sourceLoading ? "Loading fields..." : "Add key field"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0" align="start">
+                    <Command
+                      filter={(value, search) => {
+                        const fieldName = value.includes("||") ? value.split("||")[1] : value;
+                        const field = sourceFields.find((f) => f.name === fieldName);
+                        const haystack = `${fieldName} ${field?.label ?? ""}`.toLowerCase();
+                        return haystack.includes(search.toLowerCase()) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Search fields..." className="h-9" />
+                      <CommandList>
+                        <CommandEmpty>No fields found.</CommandEmpty>
+                        {(() => {
+                          const grouped = sourceFields.reduce((acc, f) => {
+                            const sec = f.section || "General";
+                            (acc[sec] ||= []).push(f);
+                            return acc;
+                          }, {} as Record<string, SourceField[]>);
+                          return Object.entries(grouped).map(([section, fields]) => (
+                            <CommandGroup key={section} heading={section}>
+                              {fields.map((f) => {
+                                const composite = `${section}||${f.name}`;
+                                const selected = lookupKeyFields.includes(composite);
+                                return (
+                                  <CommandItem
+                                    key={composite}
+                                    value={composite}
+                                    onSelect={() =>
+                                      setLookupKeyFields((prev) =>
+                                        prev.includes(composite)
+                                          ? prev.filter((x) => x !== composite)
+                                          : [...prev, composite]
+                                      )
+                                    }
+                                  >
+                                    <Check className={cn("mr-2 h-3.5 w-3.5", selected ? "opacity-100" : "opacity-0")} />
+                                    <span className="font-mono">{f.name}</span>
+                                    {f.label !== f.name && <span className="ml-1 text-muted-foreground">({f.label})</span>}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          ));
+                        })()}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Values of these source fields are indexed alongside the created ID in the lookup table, so later mappings can resolve the target ID by matching on them (not just the record ID).
+              </p>
             </div>
 
             {/* TRIRIGA Module + BO */}
@@ -346,6 +564,74 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                   widthClass="w-[300px]"
                 />
               </div>
+            </div>
+
+            {/* Source Record Filters */}
+            <div className="space-y-2 border-l-4 border-l-amber-400 pl-3 rounded-sm">
+              <div className="flex items-center gap-2">
+                <Filter className="h-3.5 w-3.5 text-amber-500" />
+                <Label className="text-xs font-medium">Source Record Filters</Label>
+                {sourceFilters.length > 1 && (
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <span>match</span>
+                    <Select value={filterMatch} onValueChange={setFilterMatch}>
+                      <SelectTrigger className="h-6 w-[70px] text-[11px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">all</SelectItem>
+                        <SelectItem value="any">any</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span>of the conditions</span>
+                  </div>
+                )}
+              </div>
+
+              {sourceFilters.map((flt, i) => {
+                const opMeta = FILTER_OPERATORS.find((o) => o.value === flt.operator);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <SearchableSelect
+                      options={sourceFields.map((f) => ({
+                        value: `${f.section || "General"}||${f.name}`,
+                        label: f.label && f.label !== f.name ? `${f.name} (${f.label})` : f.name,
+                      }))}
+                      value={flt.field}
+                      onValueChange={(v) => updateFilter(i, { field: v })}
+                      disabled={!sourceObject || sourceLoading}
+                      placeholder={!sourceObject ? "Select a business object first..." : "Select field..."}
+                      searchPlaceholder="Search fields..."
+                      widthClass="w-[260px]"
+                    />
+                    <Select value={flt.operator} onValueChange={(v) => updateFilter(i, { operator: v as FilterOperator })}>
+                      <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FILTER_OPERATORS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {opMeta?.needsValue !== false && (
+                      <Input
+                        className="h-8 w-[200px] text-xs"
+                        value={flt.value ?? ""}
+                        onChange={(e) => updateFilter(i, { value: e.target.value })}
+                        placeholder="value"
+                      />
+                    )}
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeFilter(i)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+
+              <Button size="sm" variant="outline" onClick={addFilter} className="h-7 text-xs border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950">
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Filter
+              </Button>
+              <p className="text-[10px] text-muted-foreground">
+                Only source records matching these conditions are synced. String comparisons are case-insensitive.
+              </p>
             </div>
 
             {/* Fetch Associated Objects */}
@@ -418,6 +704,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                     {kontractsMethod} {kontractsEndpoint}
                   </span>
                 )}
+                {activeFilters.length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 px-1.5 py-0.5">
+                    <Filter className="h-3 w-3" />
+                    {activeFilters.length} filter{activeFilters.length > 1 ? `s (${filterMatch})` : ""}
+                  </span>
+                )}
               </div>
             </div>
             <Button size="sm" variant="ghost" onClick={handleDetailsSave} disabled={saving} className="flex-shrink-0 text-xs h-7">
@@ -441,6 +733,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             <Button variant="outline" size="sm" onClick={addRow} className="border-blue-400 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950">
               <Plus className="mr-1 h-4 w-4" />
               Add Mapping (Base BO)
+            </Button>
+            <Button variant="outline" size="sm" onClick={addRequiredFields} disabled={!kontractsEndpoint || targetLoading} className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950">
+              <ListChecks className="mr-1 h-4 w-4" />
+              Add Required Fields
             </Button>
             {fetchAssociatedObjects && (
               <Button variant="outline" size="sm" onClick={addAssocRow} className="border-purple-400 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950">
@@ -502,7 +798,20 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
         </TabsContent>
 
         <TabsContent value="preview" className="mt-4 overflow-auto">
-          {previewData ? (
+          {!sourceObject ? (
+            <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
+              Select a TRIRIGA business object to load preview data.
+            </div>
+          ) : previewError ? (
+            <div className="rounded-lg border-2 border-dashed border-red-300 p-8 text-center text-sm text-red-600 dark:text-red-400">
+              Failed to load preview data: {(previewError as Error).message}
+            </div>
+          ) : previewLoading && !previewData ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading preview data from TRIRIGA…
+            </div>
+          ) : previewData ? (
             <DataPreview
               sourceRecords={previewData.records}
               mappedPayloads={mappedPreviewData?.records.map((r) => r.mapped)}
@@ -510,7 +819,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             />
           ) : (
             <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
-              Select a source object and query name to load preview data.
+              No preview data returned.
             </div>
           )}
         </TabsContent>

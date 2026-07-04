@@ -1,21 +1,28 @@
 import logging
+import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
+from app.models.connection import Connection
 from app.models.mapping import MappingTemplate, MappingVersion
 from app.schemas.mapping import (
     FieldMapping,
+    MappingImportPayload,
     MappingTemplateCreate,
     MappingTemplateResponse,
     MappingTemplateUpdate,
     MappingVersionResponse,
 )
+
+EXPORT_FORMAT_VERSION = "1.0"
 
 
 class MappingPreviewRequest(BaseModel):
@@ -65,6 +72,11 @@ def _build_response_with_version(
         source_query=template.source_query,
         kontracts_endpoint=template.kontracts_endpoint,
         kontracts_method=template.kontracts_method,
+        lookup_table_name=template.lookup_table_name,
+        update_existing=template.update_existing,
+        lookup_key_fields=template.lookup_key_fields or [],
+        source_filters=template.source_filters or [],
+        filter_match=template.filter_match or "all",
         fetch_associated=template.fetch_associated,
         assoc_module=template.assoc_module,
         assoc_object=template.assoc_object,
@@ -146,6 +158,11 @@ async def create_mapping(
         source_query=payload.source_query,
         kontracts_endpoint=payload.kontracts_endpoint,
         kontracts_method=payload.kontracts_method or "POST",
+        lookup_table_name=payload.lookup_table_name,
+        update_existing=payload.update_existing,
+        lookup_key_fields=payload.lookup_key_fields,
+        source_filters=[f.model_dump() for f in payload.source_filters],
+        filter_match=payload.filter_match,
     )
     db.add(template)
     await db.flush()
@@ -198,6 +215,16 @@ async def update_mapping(
         template.kontracts_endpoint = payload.kontracts_endpoint
     if "kontracts_method" in fields and payload.kontracts_method is not None:
         template.kontracts_method = payload.kontracts_method
+    if "lookup_table_name" in fields:
+        template.lookup_table_name = payload.lookup_table_name
+    if "update_existing" in fields and payload.update_existing is not None:
+        template.update_existing = payload.update_existing
+    if "lookup_key_fields" in fields and payload.lookup_key_fields is not None:
+        template.lookup_key_fields = payload.lookup_key_fields
+    if "source_filters" in fields and payload.source_filters is not None:
+        template.source_filters = [f.model_dump() for f in payload.source_filters]
+    if "filter_match" in fields and payload.filter_match is not None:
+        template.filter_match = payload.filter_match
     if "is_active" in fields and payload.is_active is not None:
         template.is_active = payload.is_active
     if "fetch_associated" in fields and payload.fetch_associated is not None:
@@ -262,6 +289,127 @@ async def get_mapping_versions(
     )
     versions = result.scalars().all()
     return versions
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "mapping").strip()).strip("-").lower()
+    return slug or "mapping"
+
+
+def _build_export(template: MappingTemplate, field_mappings: list) -> Dict[str, Any]:
+    return {
+        "kontracts_mapping_export": EXPORT_FORMAT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "template": {
+            "name": template.name,
+            "description": template.description,
+            "source_connection_id": template.source_connection_id,
+            "target_connection_id": template.target_connection_id,
+            "source_module": template.source_module,
+            "source_object": template.source_object,
+            "source_query": template.source_query,
+            "kontracts_endpoint": template.kontracts_endpoint,
+            "kontracts_method": template.kontracts_method,
+            "lookup_table_name": template.lookup_table_name,
+            "update_existing": template.update_existing,
+            "lookup_key_fields": template.lookup_key_fields or [],
+            "source_filters": template.source_filters or [],
+            "filter_match": template.filter_match or "all",
+            "fetch_associated": template.fetch_associated,
+            "assoc_module": template.assoc_module,
+            "assoc_object": template.assoc_object,
+            "assoc_string": template.assoc_string,
+            "field_mappings": field_mappings,
+        },
+    }
+
+
+@router.get("/{mapping_id}/export")
+async def export_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
+    """Export a mapping template (config + current field mappings) as a portable JSON file."""
+    result = await db.execute(
+        select(MappingTemplate).where(MappingTemplate.id == mapping_id)
+    )
+    template = result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=404, detail="Mapping template not found")
+
+    current = await _get_current_version(db, mapping_id)
+    field_mappings = current.field_mappings.get("mappings", []) if current else []
+
+    export = _build_export(template, field_mappings)
+    filename = f"mapping-{_slugify(template.name)}.json"
+    return JSONResponse(
+        content=export,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post(
+    "/import", response_model=MappingTemplateResponse, status_code=status.HTTP_201_CREATED
+)
+async def import_mapping(
+    payload: MappingImportPayload,
+    name_override: Optional[str] = Query(
+        default=None, description="Override the imported template's name"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new mapping template from a previously exported JSON file.
+
+    Connection references that no longer exist on this system are dropped so the
+    import always succeeds; re-point them afterwards in the mapping editor.
+    """
+    tpl = payload.template
+
+    name = (name_override or tpl.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Imported template is missing a name")
+
+    async def _valid_conn(conn_id: Optional[int]) -> Optional[int]:
+        if conn_id is None:
+            return None
+        exists = await db.execute(select(Connection.id).where(Connection.id == conn_id))
+        return conn_id if exists.scalar_one_or_none() is not None else None
+
+    source_connection_id = await _valid_conn(tpl.source_connection_id)
+    target_connection_id = await _valid_conn(tpl.target_connection_id)
+
+    template = MappingTemplate(
+        name=name,
+        description=tpl.description,
+        source_connection_id=source_connection_id,
+        target_connection_id=target_connection_id,
+        source_module=tpl.source_module,
+        source_object=tpl.source_object,
+        source_query=tpl.source_query,
+        kontracts_endpoint=tpl.kontracts_endpoint,
+        kontracts_method=tpl.kontracts_method or "POST",
+        lookup_table_name=tpl.lookup_table_name,
+        update_existing=tpl.update_existing,
+        lookup_key_fields=tpl.lookup_key_fields,
+        source_filters=[f.model_dump() for f in tpl.source_filters],
+        filter_match=tpl.filter_match,
+        fetch_associated=tpl.fetch_associated,
+        assoc_module=tpl.assoc_module,
+        assoc_object=tpl.assoc_object,
+        assoc_string=tpl.assoc_string,
+    )
+    db.add(template)
+    await db.flush()
+
+    field_mappings_data = [fm.model_dump() for fm in tpl.field_mappings]
+    version = MappingVersion(
+        template_id=template.id,
+        version_number=1,
+        field_mappings={"mappings": field_mappings_data},
+        is_current=True,
+    )
+    db.add(version)
+    await db.flush()
+    await db.refresh(template)
+    await db.refresh(version)
+    return _build_response_with_version(template, version)
 
 
 @router.post("/{mapping_id}/preview")

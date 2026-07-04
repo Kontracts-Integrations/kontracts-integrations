@@ -15,6 +15,7 @@ import type {
   LogEntry,
   SourceObject,
   SourceField,
+  SourceFilter,
   TririgaModule,
   TririgaField,
   KontractsEndpoint,
@@ -170,13 +171,19 @@ export const sourceApi = {
   },
   preview: async (
     objectName: string,
-    queryName: string,
-    connectionId?: number
+    moduleName?: string,
+    fieldNames?: string[],
+    connectionId?: number,
+    sourceFilters?: SourceFilter[],
+    filterMatch?: string
   ): Promise<{ records: Record<string, unknown>[]; fields: SourceField[]; count: number }> => {
     const r = await http.post("/source/preview", {
       connection_id: connectionId,
       object_name: objectName,
-      query_name: queryName,
+      module_name: moduleName || null,
+      field_names: fieldNames && fieldNames.length ? fieldNames : null,
+      source_filters: sourceFilters && sourceFilters.length ? sourceFilters : null,
+      filter_match: filterMatch || "all",
       max_records: 5,
     });
     return r.data;
@@ -242,6 +249,20 @@ export const mappingsApi = {
     const r = await http.get<MappingVersion[]>(`/mappings/${id}/versions`);
     return r.data;
   },
+  export: async (id: number): Promise<Blob> => {
+    // Authenticated blob download (a plain window.open can't attach the Bearer token).
+    const r = await http.get(`/mappings/${id}/export`, { responseType: "blob" });
+    return r.data as Blob;
+  },
+  import: async (
+    payload: Record<string, unknown>,
+    nameOverride?: string
+  ): Promise<MappingTemplate> => {
+    const r = await http.post<MappingTemplate>("/mappings/import", payload, {
+      params: nameOverride ? { name_override: nameOverride } : undefined,
+    });
+    return r.data;
+  },
   previewMapping: async (
     id: number,
     records: Record<string, unknown>[],
@@ -293,6 +314,24 @@ export const runsApi = {
   cancel: async (runId: number): Promise<SyncRun> => {
     const r = await http.post<SyncRun>(`/runs/${runId}/cancel`);
     return r.data;
+  },
+  exportRecords: async (
+    runId: number,
+    status: string,
+    category: string,
+    errorMessages: string[]
+  ): Promise<Blob> => {
+    // Fetch through the authenticated client (adds the Bearer token) as a blob,
+    // since a plain window.open navigation can't attach the auth header.
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (category) params.set("category", category);
+    errorMessages.forEach((m) => params.append("error_message", m));
+    const r = await http.get(`/runs/${runId}/export`, {
+      params,
+      responseType: "blob",
+    });
+    return r.data as Blob;
   },
 };
 

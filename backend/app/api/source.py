@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -131,8 +131,12 @@ async def get_associated_objects(
 class PreviewRequest(BaseModel):
     connection_id: Optional[int] = None
     object_name: str
-    query_name: str
+    module_name: Optional[str] = None
+    field_names: Optional[List[str]] = None
+    query_name: str = ""
     max_records: int = 5
+    source_filters: Optional[List[Dict[str, Any]]] = None
+    filter_match: str = "all"
 
 
 @router.post("/preview")
@@ -142,13 +146,36 @@ async def preview_data(
 ):
     connector = await _get_connector(payload.connection_id, db)
     try:
-        records = await connector.run_query(
+        # Fields referenced only by filters must also be fetched, else the filter
+        # has no value to compare against and drops every record.
+        field_names = list(payload.field_names or [])
+        for flt in (payload.source_filters or []):
+            fld = flt.get("field")
+            if fld and fld not in field_names:
+                field_names.append(fld)
+
+        # When filters are active, fetch a larger sample so matching records
+        # aren't missed, then filter and cap to the requested preview size.
+        fetch_count = 200 if payload.source_filters else payload.max_records
+        records = await connector.preview_records(
             object_name=payload.object_name,
+            module_name=payload.module_name,
+            field_names=field_names or None,
             query_name=payload.query_name,
-            filters={},
-            max_records=payload.max_records,
+            max_records=fetch_count,
         )
-        fields = await connector.get_object_fields(payload.object_name)
+        if payload.source_filters:
+            from app.mapping_engine.filters import filter_records
+            records = filter_records(
+                records, payload.source_filters, payload.filter_match
+            )[: payload.max_records]
+        try:
+            fields = await connector.get_object_fields(
+                payload.object_name,
+                **({"module_name": payload.module_name} if payload.module_name else {}),
+            )
+        except TypeError:
+            fields = await connector.get_object_fields(payload.object_name)
         return {
             "records": records,
             "count": len(records),

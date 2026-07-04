@@ -19,9 +19,27 @@ class FieldMapping(BaseModel):
         default=None,
         description="Transform-specific configuration",
     )
+    default_value: Optional[str] = Field(
+        default=None,
+        description="Value to use when the source is empty/null or the transform fails",
+    )
     is_required: bool = Field(default=False)
     use_associated: bool = Field(default=False)
     description: Optional[str] = None
+
+
+class SourceFilter(BaseModel):
+    field: str = Field(..., description="Source field name / path to filter on")
+    operator: str = Field(
+        default="equals",
+        description=(
+            "One of: equals, not_equals, contains, not_contains, starts_with, "
+            "ends_with, is_empty, is_not_empty, greater_than, less_than, gte, lte, regex"
+        ),
+    )
+    value: Optional[str] = Field(
+        default=None, description="Comparison value (ignored for is_empty/is_not_empty)"
+    )
 
 
 class MappingTemplateCreate(BaseModel):
@@ -34,6 +52,24 @@ class MappingTemplateCreate(BaseModel):
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = Field(default="POST", pattern="^(GET|POST|PUT|PATCH|DELETE)$")
+    lookup_table_name: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Named table this mapping writes produced IDs into for subsequent lookups",
+    )
+    update_existing: bool = Field(
+        default=False,
+        description="Update already-synced records whose payload changed instead of skipping",
+    )
+    lookup_key_fields: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Source field names whose values are indexed as lookup keys for the "
+            "produced Kontracts ID, so later mappings can resolve it by these keys"
+        ),
+    )
+    source_filters: List[SourceFilter] = Field(default_factory=list)
+    filter_match: str = Field(default="all", pattern="^(all|any)$")
     field_mappings: List[FieldMapping] = Field(default_factory=list)
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
@@ -51,12 +87,29 @@ class MappingTemplateUpdate(BaseModel):
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = None
+    lookup_table_name: Optional[str] = Field(default=None, max_length=255)
+    update_existing: Optional[bool] = None
+    lookup_key_fields: Optional[List[str]] = None
+    source_filters: Optional[List[SourceFilter]] = None
+    filter_match: Optional[str] = Field(default=None, pattern="^(all|any)$")
     field_mappings: Optional[List[FieldMapping]] = None
     is_active: Optional[bool] = None
     fetch_associated: Optional[bool] = None
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None
     assoc_string: Optional[str] = None
+
+
+class MappingImportPayload(BaseModel):
+    """A previously exported mapping template file.
+
+    The wrapper metadata (``kontracts_mapping_export``/``exported_at``) is optional
+    so a bare ``MappingTemplateCreate``-shaped object can also be imported.
+    """
+
+    kontracts_mapping_export: Optional[str] = None
+    exported_at: Optional[str] = None
+    template: MappingTemplateCreate
 
 
 class MappingVersionResponse(BaseModel):
@@ -81,6 +134,11 @@ class MappingTemplateResponse(BaseModel):
     source_query: Optional[str]
     kontracts_endpoint: Optional[str]
     kontracts_method: Optional[str]
+    lookup_table_name: Optional[str] = None
+    update_existing: bool = False
+    lookup_key_fields: List[str] = Field(default_factory=list)
+    source_filters: List[SourceFilter] = Field(default_factory=list)
+    filter_match: str = "all"
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None

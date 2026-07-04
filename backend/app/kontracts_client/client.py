@@ -123,6 +123,19 @@ class KontractsClient:
             resp = await http.put(
                 f"{self.base_url}{path}", headers=headers, json=data, params=params
             )
+            if resp.is_error:
+                logger.error("PUT %s → %s: %s", path, resp.status_code, resp.text)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def _patch(self, path: str, data: Dict, params: Optional[Dict] = None) -> Any:
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.patch(
+                f"{self.base_url}{path}", headers=headers, json=data, params=params
+            )
+            if resp.is_error:
+                logger.error("PATCH %s → %s: %s", path, resp.status_code, resp.text)
             resp.raise_for_status()
             return resp.json()
 
@@ -224,6 +237,26 @@ class KontractsClient:
             return res
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
+
+    async def update_record(
+        self, endpoint: str, kontracts_id: str, payload: Dict[str, Any], method: str = "PUT"
+    ) -> Dict[str, Any]:
+        """Update an existing Kontracts record by ID (PUT/PATCH to {endpoint}/{id})."""
+        if self.demo_mode:
+            return {"id": kontracts_id, "status": "updated", **payload}
+
+        # Build the per-record URL: normalize a single trailing slash on the
+        # collection endpoint, then append the id. A bulk endpoint is stripped of
+        # its "/bulk" suffix so updates target the individual-record route.
+        base = endpoint.rstrip("/")
+        if base.endswith("/bulk"):
+            base = base[: -len("/bulk")]
+        record_endpoint = f"{base}/{kontracts_id}"
+
+        method = method.upper()
+        if method == "PATCH":
+            return await self._patch(record_endpoint, payload)
+        return await self._put(record_endpoint, payload)
 
     async def push_bulk(
         self, endpoint: str, method: str, payloads: List[Dict[str, Any]]
