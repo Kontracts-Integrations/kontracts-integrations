@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -131,7 +131,9 @@ async def get_associated_objects(
 class PreviewRequest(BaseModel):
     connection_id: Optional[int] = None
     object_name: str
-    query_name: str
+    module_name: Optional[str] = None
+    field_names: Optional[List[str]] = None
+    query_name: str = ""
     max_records: int = 5
 
 
@@ -142,13 +144,20 @@ async def preview_data(
 ):
     connector = await _get_connector(payload.connection_id, db)
     try:
-        records = await connector.run_query(
+        records = await connector.preview_records(
             object_name=payload.object_name,
+            module_name=payload.module_name,
+            field_names=payload.field_names,
             query_name=payload.query_name,
-            filters={},
             max_records=payload.max_records,
         )
-        fields = await connector.get_object_fields(payload.object_name)
+        try:
+            fields = await connector.get_object_fields(
+                payload.object_name,
+                **({"module_name": payload.module_name} if payload.module_name else {}),
+            )
+        except TypeError:
+            fields = await connector.get_object_fields(payload.object_name)
         return {
             "records": records,
             "count": len(records),

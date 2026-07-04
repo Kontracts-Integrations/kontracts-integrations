@@ -10,7 +10,8 @@ Supported transform types:
   string_template  - Jinja2-style {field} substitution
   lookup_table     - map discrete values to other values
   json_path        - extract value from nested dict via JSONPath
-  lease_lookup     - look up kontracts_id from lease_mappings table by tririga_record_id
+  lease_lookup     - look up a kontracts_id produced by a prior mapping, from a
+                     named lookup table (default "lease_mappings") by source record ID
 """
 import logging
 import re
@@ -224,12 +225,14 @@ def _lookup_table(value: Any, cfg: Dict, context: Dict = {}) -> Any:
 
     Config:
         table          - dict mapping input -> output (used when dynamic_source is not set)
-        dynamic_source - "lease_mappings" to load the table from runtime context instead
+        dynamic_source - name of a runtime lookup table to load instead of `table`.
+                         "lease_mappings" (or any named lookup table) resolves from
+                         the IDs produced by a prior mapping.
         default        - value to return if no match (default: original value)
     """
     dynamic_source = cfg.get("dynamic_source")
-    if dynamic_source == "lease_mappings":
-        table: Dict[str, Any] = context.get("lease_mappings", {})
+    if dynamic_source:
+        table: Dict[str, Any] = _resolve_lookup_table(dynamic_source, context)
     else:
         table = cfg.get("table", {})
 
@@ -296,14 +299,28 @@ def _currency_code(value: Any, cfg: Dict) -> Optional[str]:
     return cfg.get("default", str(value))
 
 
+def _resolve_lookup_table(name: str, context: Dict) -> Dict[str, Any]:
+    """
+    Resolve a named runtime lookup table (source_id -> kontracts_id) from context.
+
+    Named tables populated by prior mappings live under context["lookup_tables"].
+    "lease_mappings" also resolves via its legacy top-level context key.
+    """
+    tables = context.get("lookup_tables", {})
+    if name in tables:
+        return tables[name]
+    if name == "lease_mappings":
+        return context.get("lease_mappings", {})
+    return {}
+
+
 def _lease_lookup(value: Any, cfg: Dict, context: Dict) -> Any:
     """
-    Look up a Kontracts ID from the lease_mappings table using a TRIRIGA record ID.
-
-    The context dict must contain "lease_mappings": {tririga_record_id: kontracts_id}.
+    Look up a Kontracts ID produced by a prior mapping, using a TRIRIGA record ID.
 
     Config:
-        default - value to return if no match found (default: None)
+        source_table - name of the lookup table to read from (default: "lease_mappings")
+        default      - value to return if no match found (default: None)
     """
     if value is None:
         return cfg.get("default")
@@ -314,7 +331,8 @@ def _lease_lookup(value: Any, cfg: Dict, context: Dict) -> Any:
     if match:
         val_str = match.group(1)
 
-    lease_map: Dict[str, str] = context.get("lease_mappings", {})
+    source_table = cfg.get("source_table") or "lease_mappings"
+    lease_map: Dict[str, str] = _resolve_lookup_table(source_table, context)
     result = lease_map.get(val_str)
 
     if result is None:

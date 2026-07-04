@@ -35,3 +35,19 @@ class SourceConnector(ABC):
     ) -> List[Dict[str, Any]]:
         """Fetch records from the source system."""
         ...
+
+    async def preview_records(
+        self,
+        object_name: str,
+        module_name: Optional[str] = None,
+        field_names: Optional[List[str]] = None,
+        query_name: str = "",
+        max_records: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Fetch a small sample of records for the mapping preview.
+
+        Default implementation defers to run_query. Connectors that fetch via a
+        dynamic field query (rather than a named query) should override this so
+        the preview matches how the sync actually pulls data.
+        """
+        return await self.run_query(object_name, query_name, {}, max_records)

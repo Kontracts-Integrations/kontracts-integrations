@@ -170,13 +170,15 @@ export const sourceApi = {
   },
   preview: async (
     objectName: string,
-    queryName: string,
+    moduleName?: string,
+    fieldNames?: string[],
     connectionId?: number
   ): Promise<{ records: Record<string, unknown>[]; fields: SourceField[]; count: number }> => {
     const r = await http.post("/source/preview", {
       connection_id: connectionId,
       object_name: objectName,
-      query_name: queryName,
+      module_name: moduleName || null,
+      field_names: fieldNames && fieldNames.length ? fieldNames : null,
       max_records: 5,
     });
     return r.data;

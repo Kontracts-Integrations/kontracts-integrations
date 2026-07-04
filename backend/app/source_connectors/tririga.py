@@ -43,3 +43,24 @@ class TririgaSourceConnector(SourceConnector):
             filters=filters,
             max_records=max_records,
         )
+
+    async def preview_records(
+        self,
+        object_name: str,
+        module_name: Optional[str] = None,
+        field_names: Optional[List[str]] = None,
+        query_name: str = "",
+        max_records: int = 5,
+    ) -> List[Dict[str, Any]]:
+        # Mirror the sync's runDynamicQuery fetch so the preview shows the same
+        # data the sync would pull. A named query is used only if explicitly given.
+        if query_name:
+            return await self.run_query(object_name, query_name, {}, max_records)
+        return await self._client.run_dynamic_query(
+            module_name=module_name or object_name,
+            object_type_name=object_name,
+            field_names=field_names or [],
+            filter_condition="",
+            max_records=max_records,
+            fetch_all=False,
+        )

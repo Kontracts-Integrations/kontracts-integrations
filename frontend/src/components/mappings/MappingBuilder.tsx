@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sourceApi, kontractsApi, connectionsApi, mappingsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ interface Props {
       source_query?: string | null;
       kontracts_endpoint?: string | null;
       kontracts_method?: string;
+      lookup_table_name?: string | null;
       field_mappings: FieldMapping[];
       source_connection_id?: number | null;
       target_connection_id?: number | null;
@@ -48,6 +49,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [sourceQuery, setSourceQuery] = useState(template.source_query ?? "");
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
+  const [lookupTableName, setLookupTableName] = useState(template.lookup_table_name ?? "");
   const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
   const [sourceObjectId, setSourceObjectId] = useState<number | undefined>(undefined);
   const [assocModule, setAssocModule] = useState(template.assoc_module ?? "");
@@ -74,6 +76,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setSourceQuery(template.source_query ?? "");
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
     setKontractsMethod(template.kontracts_method ?? "POST");
+    setLookupTableName(template.lookup_table_name ?? "");
     setSourceConnId(template.source_connection_id ?? undefined);
     setTargetConnId(template.target_connection_id ?? undefined);
     setFetchAssociatedObjects(template.fetch_associated ?? false);
@@ -161,11 +164,20 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     queryFn: () => kontractsApi.getEndpoints(targetConnId),
   });
 
-  // Preview data (source records)
-  const { data: previewData } = useQuery({
-    queryKey: ["source-preview", sourceObject, sourceQuery, sourceConnId],
-    queryFn: () => sourceApi.preview(sourceObject, sourceQuery, sourceConnId),
-    enabled: !!sourceObject && !!sourceQuery,
+  // Preview data (source records) — fetched via the same dynamic query the sync
+  // uses: module + object + the source fields referenced by the mappings.
+  const previewFieldNames = useMemo(
+    () => mappings.map((m) => m.source_field).filter((f): f is string => !!f),
+    [mappings]
+  );
+  const {
+    data: previewData,
+    isFetching: previewLoading,
+    error: previewError,
+  } = useQuery({
+    queryKey: ["source-preview", sourceObject, sourceModule, previewFieldNames.join(","), sourceConnId],
+    queryFn: () => sourceApi.preview(sourceObject, sourceModule || undefined, previewFieldNames, sourceConnId),
+    enabled: !!sourceObject,
   });
 
   // Mapped preview — apply current field mappings to source records via the backend engine
@@ -225,6 +237,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     source_query: sourceQuery || null,
     kontracts_endpoint: kontractsEndpoint || null,
     kontracts_method: kontractsMethod,
+    lookup_table_name: lookupTableName.trim() || null,
     field_mappings: mappings,
     source_connection_id: sourceConnId ?? null,
     target_connection_id: targetConnId ?? null,
@@ -317,6 +330,18 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                   searchPlaceholder="Search endpoints..."
                   widthClass="w-[280px]"
                 />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Lookup Table Name</Label>
+                <Input
+                  className="w-[240px]"
+                  value={lookupTableName}
+                  onChange={(e) => setLookupTableName(e.target.value)}
+                  placeholder="e.g. lease_mappings"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Names the table this mapping writes created IDs into, so later mappings can look them up.
+                </p>
               </div>
             </div>
 
@@ -502,7 +527,20 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
         </TabsContent>
 
         <TabsContent value="preview" className="mt-4 overflow-auto">
-          {previewData ? (
+          {!sourceObject ? (
+            <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
+              Select a TRIRIGA business object to load preview data.
+            </div>
+          ) : previewError ? (
+            <div className="rounded-lg border-2 border-dashed border-red-300 p-8 text-center text-sm text-red-600 dark:text-red-400">
+              Failed to load preview data: {(previewError as Error).message}
+            </div>
+          ) : previewLoading && !previewData ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading preview data from TRIRIGA…
+            </div>
+          ) : previewData ? (
             <DataPreview
               sourceRecords={previewData.records}
               mappedPayloads={mappedPreviewData?.records.map((r) => r.mapped)}
@@ -510,7 +548,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
             />
           ) : (
             <div className="rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground">
-              Select a source object and query name to load preview data.
+              No preview data returned.
             </div>
           )}
         </TabsContent>

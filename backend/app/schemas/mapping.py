@@ -34,6 +34,11 @@ class MappingTemplateCreate(BaseModel):
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = Field(default="POST", pattern="^(GET|POST|PUT|PATCH|DELETE)$")
+    lookup_table_name: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Named table this mapping writes produced IDs into for subsequent lookups",
+    )
     field_mappings: List[FieldMapping] = Field(default_factory=list)
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
@@ -51,6 +56,7 @@ class MappingTemplateUpdate(BaseModel):
     source_query: Optional[str] = None
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = None
+    lookup_table_name: Optional[str] = Field(default=None, max_length=255)
     field_mappings: Optional[List[FieldMapping]] = None
     is_active: Optional[bool] = None
     fetch_associated: Optional[bool] = None
@@ -81,6 +87,7 @@ class MappingTemplateResponse(BaseModel):
     source_query: Optional[str]
     kontracts_endpoint: Optional[str]
     kontracts_method: Optional[str]
+    lookup_table_name: Optional[str] = None
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None

@@ -85,6 +85,7 @@ export interface MappingTemplate {
   source_query: string | null;
   kontracts_endpoint: string | null;
   kontracts_method: string | null;
+  lookup_table_name: string | null;
   fetch_associated: boolean;
   assoc_module: string | null;
   assoc_object: string | null;
@@ -105,6 +106,7 @@ export interface MappingTemplateCreate {
   source_query?: string | null;
   kontracts_endpoint?: string | null;
   kontracts_method?: string;
+  lookup_table_name?: string | null;
   field_mappings: FieldMapping[];
   fetch_associated?: boolean;
   assoc_module?: string | null;
@@ -122,6 +124,7 @@ export interface MappingTemplateUpdate {
   source_query?: string | null;
   kontracts_endpoint?: string | null;
   kontracts_method?: string;
+  lookup_table_name?: string | null;
   fetch_associated?: boolean;
   assoc_module?: string | null;
   assoc_object?: string | null;

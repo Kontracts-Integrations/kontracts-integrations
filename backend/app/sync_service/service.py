@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.lease_mapping import LeaseMapping
+from app.models.lease_mapping import DEFAULT_LOOKUP_TABLE, LeaseMapping
 from app.models.log_entry import LogEntry, LogLevel
 from app.models.mapping import MappingTemplate, MappingVersion
 from app.models.sync_run import RecordStatus, RunStatus, SyncRecord, SyncRun
@@ -128,30 +128,50 @@ class SyncService:
                     "kontracts_client",
                 )
 
-        # Pre-load lease_mappings for deduplication check and lease_lookup transform
+        # Determine which named lookup table this mapping writes produced IDs into.
+        # An explicit lookup_table_name wins; otherwise a leases endpoint implicitly
+        # writes to the default table (backward compatible with prior behavior).
+        write_table = template.lookup_table_name
+        if not write_table and template.kontracts_endpoint and "leases" in template.kontracts_endpoint.lower():
+            write_table = DEFAULT_LOOKUP_TABLE
+        should_write_lookup = bool(write_table)
+
+        # Pre-load all id mappings for deduplication and lookup transforms,
+        # partitioned by their named lookup table.
         existing_result = await self.db.execute(
             select(
+                LeaseMapping.table_name,
                 LeaseMapping.tririga_record_id,
                 LeaseMapping.tririga_lease_id,
                 LeaseMapping.kontracts_id,
             )
         )
         lease_rows = existing_result.fetchall()
-        
-        is_lease_sync = template.kontracts_endpoint and "leases" in template.kontracts_endpoint.lower()
-        already_synced = {row[0] for row in lease_rows} if is_lease_sync else set()
-        
-        lease_map = {}
+
+        # Skip records already present in the table this mapping writes to.
+        already_synced = (
+            {row[1] for row in lease_rows if row[0] == write_table}
+            if should_write_lookup else set()
+        )
+
+        # Build per-table lookup maps: {table_name: {source_id: kontracts_id}}.
+        lookup_tables: Dict[str, Dict[str, str]] = {}
         for row in lease_rows:
-            lease_map[str(row[0])] = row[2]
-            if row[1]:
-                lease_map[str(row[1])] = row[2]
-        engine_context = {"lease_mappings": lease_map}
+            table = lookup_tables.setdefault(row[0], {})
+            table[str(row[1])] = row[3]
+            if row[2]:
+                table[str(row[2])] = row[3]
+        engine_context = {
+            "lookup_tables": lookup_tables,
+            # Backward-compat: the default table under its legacy context key.
+            "lease_mappings": lookup_tables.get(DEFAULT_LOOKUP_TABLE, {}),
+        }
 
         await self._log(
             run_id, LogLevel.info,
-            f"{len(already_synced)} records already synced — will skip duplicates" if is_lease_sync
-            else "Payment sync run — skipping lease deduplication check",
+            f"{len(already_synced)} records already synced into '{write_table}' — will skip duplicates"
+            if should_write_lookup
+            else "No lookup table configured — skipping deduplication check",
             "sync_service",
         )
 
@@ -361,13 +381,14 @@ class SyncService:
                                 tririga_lease_id = str(result_data.get("lease_id", ""))
                                 tririga_record_id = record_id
 
-                                if is_lease_sync:
+                                if should_write_lookup:
                                     self.db.add(LeaseMapping(
+                                        table_name=write_table,
                                         tririga_lease_id=tririga_lease_id,
                                         tririga_record_id=tririga_record_id,
                                         kontracts_id=kontracts_id,
                                     ))
-                                
+
                                 await self._save_record(
                                     run_id=run_id,
                                     tririga_id=record_id,
@@ -618,13 +639,14 @@ class SyncService:
                         tririga_lease_id = str(result_data.get("lease_id", ""))
                         tririga_record_id = record_id
 
-                        if is_lease_sync:
+                        if should_write_lookup:
                             self.db.add(LeaseMapping(
+                                table_name=write_table,
                                 tririga_lease_id=tririga_lease_id,
                                 tririga_record_id=tririga_record_id,
                                 kontracts_id=kontracts_id,
                             ))
-                        
+
                         await self._save_record(
                             run_id=run_id,
                             tririga_id=record_id,

@@ -32,6 +32,10 @@ class MappingTemplate(Base):
     kontracts_endpoint: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     kontracts_method: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
+    # Named lookup table this mapping writes its produced (source_id -> kontracts_id)
+    # pairs into on success, so subsequent mappings can look those IDs up.
+    lookup_table_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     fetch_associated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assoc_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     assoc_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
