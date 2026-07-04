@@ -301,6 +301,24 @@ export const runsApi = {
     const r = await http.post<SyncRun>(`/runs/${runId}/cancel`);
     return r.data;
   },
+  exportRecords: async (
+    runId: number,
+    status: string,
+    category: string,
+    errorMessages: string[]
+  ): Promise<Blob> => {
+    // Fetch through the authenticated client (adds the Bearer token) as a blob,
+    // since a plain window.open navigation can't attach the auth header.
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (category) params.set("category", category);
+    errorMessages.forEach((m) => params.append("error_message", m));
+    const r = await http.get(`/runs/${runId}/export`, {
+      params,
+      responseType: "blob",
+    });
+    return r.data as Blob;
+  },
 };
 
 // ──────────────────────────────────────────────

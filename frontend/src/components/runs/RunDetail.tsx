@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { runsApi } from "@/lib/api";
+import { toast } from "@/components/ui/toaster";
 import { RecordResults } from "./RecordResults";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -151,13 +152,24 @@ export function RunDetail({ runId, mappingName = "Unknown Template" }: Props) {
 
   if (!run) return <p>Run not found.</p>;
 
-  const handleExportToExcel = (status: string, errorMessages: string[], category: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const msgParams = errorMessages
-      .map((msg) => `error_message=${encodeURIComponent(msg)}`)
-      .join("&");
-    const url = `${baseUrl}/api/v1/runs/${runId}/export?status=${status}&category=${encodeURIComponent(category)}${msgParams ? `&${msgParams}` : ""}`;
-    window.open(url, "_blank");
+  const handleExportToExcel = async (status: string, errorMessages: string[], category: string) => {
+    try {
+      const blob = await runsApi.exportRecords(runId, status, category, errorMessages);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `run ${runId} - ${category || "export"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast({
+        title: "Export failed",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    }
   };
 
   const groupedErrors = getFailureSummary(run.grouped_records || []);
