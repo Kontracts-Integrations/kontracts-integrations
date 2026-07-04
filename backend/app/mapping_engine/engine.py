@@ -47,10 +47,16 @@ class MappingEngine:
             transform_type = mapping.get("transform_type", "direct")
             transform_config = mapping.get("transform_config") or {}
             is_required = mapping.get("is_required", False)
+            default_value = mapping.get("default_value")
+            has_default = default_value is not None and str(default_value).strip() != ""
+
+            if not target_field:
+                continue
 
             if not source_field and transform_type != "constant":
-                continue
-            if not target_field:
+                # No source to read — emit the default if one is set, else skip.
+                if has_default:
+                    _set_nested_value(payload, target_field, default_value)
                 continue
 
             # Get source value (supports dotted paths and Associated BO fields)
@@ -75,11 +81,21 @@ class MappingEngine:
                 )
                 logger.error(msg, exc_info=True)
                 warnings.append(msg)
+                if has_default:
+                    _set_nested_value(payload, target_field, default_value)
+                    continue
                 if is_required:
                     raise ValueError(
                         f"Required field mapping failed: {source_field} -> {target_field}: {e}"
                     )
                 continue
+
+            # Fall back to the default when the value is empty or null.
+            if has_default and (
+                transformed_value is None
+                or (isinstance(transformed_value, str) and transformed_value.strip() == "")
+            ):
+                transformed_value = default_value
 
             # Set value in target payload (supports dotted paths)
             _set_nested_value(payload, target_field, transformed_value)

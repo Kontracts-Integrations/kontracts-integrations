@@ -60,6 +60,7 @@ export interface FieldMapping {
   target_field: string;
   transform_type: TransformType;
   transform_config?: Record<string, unknown> | null;
+  default_value?: string | null;
   is_required: boolean;
   description?: string | null;
   use_associated?: boolean;

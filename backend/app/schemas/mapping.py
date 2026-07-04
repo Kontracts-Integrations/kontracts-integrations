@@ -19,6 +19,10 @@ class FieldMapping(BaseModel):
         default=None,
         description="Transform-specific configuration",
     )
+    default_value: Optional[str] = Field(
+        default=None,
+        description="Value to use when the source is empty/null or the transform fails",
+    )
     is_required: bool = Field(default=False)
     use_associated: bool = Field(default=False)
     description: Optional[str] = None
