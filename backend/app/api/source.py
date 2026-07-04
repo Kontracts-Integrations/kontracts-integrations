@@ -135,6 +135,8 @@ class PreviewRequest(BaseModel):
     field_names: Optional[List[str]] = None
     query_name: str = ""
     max_records: int = 5
+    source_filters: Optional[List[Dict[str, Any]]] = None
+    filter_match: str = "all"
 
 
 @router.post("/preview")
@@ -144,13 +146,21 @@ async def preview_data(
 ):
     connector = await _get_connector(payload.connection_id, db)
     try:
+        # When filters are active, fetch a larger sample so matching records
+        # aren't missed, then filter and cap to the requested preview size.
+        fetch_count = 200 if payload.source_filters else payload.max_records
         records = await connector.preview_records(
             object_name=payload.object_name,
             module_name=payload.module_name,
             field_names=payload.field_names,
             query_name=payload.query_name,
-            max_records=payload.max_records,
+            max_records=fetch_count,
         )
+        if payload.source_filters:
+            from app.mapping_engine.filters import filter_records
+            records = filter_records(
+                records, payload.source_filters, payload.filter_match
+            )[: payload.max_records]
         try:
             fields = await connector.get_object_fields(
                 payload.object_name,

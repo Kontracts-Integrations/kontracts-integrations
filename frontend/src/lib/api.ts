@@ -15,6 +15,7 @@ import type {
   LogEntry,
   SourceObject,
   SourceField,
+  SourceFilter,
   TririgaModule,
   TririgaField,
   KontractsEndpoint,
@@ -172,13 +173,17 @@ export const sourceApi = {
     objectName: string,
     moduleName?: string,
     fieldNames?: string[],
-    connectionId?: number
+    connectionId?: number,
+    sourceFilters?: SourceFilter[],
+    filterMatch?: string
   ): Promise<{ records: Record<string, unknown>[]; fields: SourceField[]; count: number }> => {
     const r = await http.post("/source/preview", {
       connection_id: connectionId,
       object_name: objectName,
       module_name: moduleName || null,
       field_names: fieldNames && fieldNames.length ? fieldNames : null,
+      source_filters: sourceFilters && sourceFilters.length ? sourceFilters : null,
+      filter_match: filterMatch || "all",
       max_records: 5,
     });
     return r.data;

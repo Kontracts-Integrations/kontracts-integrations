@@ -65,6 +65,27 @@ export interface FieldMapping {
   use_associated?: boolean;
 }
 
+export type FilterOperator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "not_contains"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "greater_than"
+  | "less_than"
+  | "gte"
+  | "lte"
+  | "regex";
+
+export interface SourceFilter {
+  field: string;
+  operator: FilterOperator;
+  value?: string | null;
+}
+
 export interface MappingVersion {
   id: number;
   template_id: number;
@@ -87,6 +108,8 @@ export interface MappingTemplate {
   kontracts_method: string | null;
   lookup_table_name: string | null;
   update_existing: boolean;
+  source_filters: SourceFilter[];
+  filter_match: string;
   fetch_associated: boolean;
   assoc_module: string | null;
   assoc_object: string | null;
@@ -109,6 +132,8 @@ export interface MappingTemplateCreate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  source_filters?: SourceFilter[];
+  filter_match?: string;
   field_mappings: FieldMapping[];
   fetch_associated?: boolean;
   assoc_module?: string | null;
@@ -128,6 +153,8 @@ export interface MappingTemplateUpdate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  source_filters?: SourceFilter[];
+  filter_match?: string;
   fetch_associated?: boolean;
   assoc_module?: string | null;
   assoc_object?: string | null;

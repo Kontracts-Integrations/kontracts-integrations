@@ -98,13 +98,28 @@ class SyncService:
             fetch_all=True,
         )
 
-        run.total_records = len(records)
         await self._log(
             run_id,
             LogLevel.info,
             f"Fetched {len(records)} records from TRIRIGA",
             "tririga_client",
         )
+
+        # Apply source-record filters (starts_with / contains / equals / etc.).
+        source_filters = template.source_filters or []
+        if source_filters:
+            from app.mapping_engine.filters import filter_records
+            fetched = len(records)
+            records = filter_records(records, source_filters, template.filter_match or "all")
+            await self._log(
+                run_id,
+                LogLevel.info,
+                f"Source filters kept {len(records)} of {fetched} records "
+                f"(match={template.filter_match or 'all'})",
+                "sync_service",
+            )
+
+        run.total_records = len(records)
         await self.db.flush()
 
         # Build mapping engine

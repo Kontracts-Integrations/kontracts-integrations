@@ -40,6 +40,13 @@ class MappingTemplate(Base):
     # changed (PUT to {endpoint}/{kontracts_id}) instead of skipping them.
     update_existing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Source-record filters: list of {field, operator, value}. Only records that
+    # match are mapped/pushed. filter_match is "all" (AND) or "any" (OR).
+    source_filters: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
+        JSONB, nullable=True, default=list
+    )
+    filter_match: Mapped[str] = mapped_column(String(10), default="all", nullable=False)
+
     fetch_associated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assoc_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     assoc_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

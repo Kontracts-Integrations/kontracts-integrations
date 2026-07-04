@@ -24,6 +24,20 @@ class FieldMapping(BaseModel):
     description: Optional[str] = None
 
 
+class SourceFilter(BaseModel):
+    field: str = Field(..., description="Source field name / path to filter on")
+    operator: str = Field(
+        default="equals",
+        description=(
+            "One of: equals, not_equals, contains, not_contains, starts_with, "
+            "ends_with, is_empty, is_not_empty, greater_than, less_than, gte, lte, regex"
+        ),
+    )
+    value: Optional[str] = Field(
+        default=None, description="Comparison value (ignored for is_empty/is_not_empty)"
+    )
+
+
 class MappingTemplateCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
@@ -43,6 +57,8 @@ class MappingTemplateCreate(BaseModel):
         default=False,
         description="Update already-synced records whose payload changed instead of skipping",
     )
+    source_filters: List[SourceFilter] = Field(default_factory=list)
+    filter_match: str = Field(default="all", pattern="^(all|any)$")
     field_mappings: List[FieldMapping] = Field(default_factory=list)
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
@@ -62,6 +78,8 @@ class MappingTemplateUpdate(BaseModel):
     kontracts_method: Optional[str] = None
     lookup_table_name: Optional[str] = Field(default=None, max_length=255)
     update_existing: Optional[bool] = None
+    source_filters: Optional[List[SourceFilter]] = None
+    filter_match: Optional[str] = Field(default=None, pattern="^(all|any)$")
     field_mappings: Optional[List[FieldMapping]] = None
     is_active: Optional[bool] = None
     fetch_associated: Optional[bool] = None
@@ -94,6 +112,8 @@ class MappingTemplateResponse(BaseModel):
     kontracts_method: Optional[str]
     lookup_table_name: Optional[str] = None
     update_existing: bool = False
+    source_filters: List[SourceFilter] = Field(default_factory=list)
+    filter_match: str = "all"
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None

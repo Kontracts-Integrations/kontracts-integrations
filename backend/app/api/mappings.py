@@ -67,6 +67,8 @@ def _build_response_with_version(
         kontracts_method=template.kontracts_method,
         lookup_table_name=template.lookup_table_name,
         update_existing=template.update_existing,
+        source_filters=template.source_filters or [],
+        filter_match=template.filter_match or "all",
         fetch_associated=template.fetch_associated,
         assoc_module=template.assoc_module,
         assoc_object=template.assoc_object,
@@ -150,6 +152,8 @@ async def create_mapping(
         kontracts_method=payload.kontracts_method or "POST",
         lookup_table_name=payload.lookup_table_name,
         update_existing=payload.update_existing,
+        source_filters=[f.model_dump() for f in payload.source_filters],
+        filter_match=payload.filter_match,
     )
     db.add(template)
     await db.flush()
@@ -206,6 +210,10 @@ async def update_mapping(
         template.lookup_table_name = payload.lookup_table_name
     if "update_existing" in fields and payload.update_existing is not None:
         template.update_existing = payload.update_existing
+    if "source_filters" in fields and payload.source_filters is not None:
+        template.source_filters = [f.model_dump() for f in payload.source_filters]
+    if "filter_match" in fields and payload.filter_match is not None:
+        template.filter_match = payload.filter_match
     if "is_active" in fields and payload.is_active is not None:
         template.is_active = payload.is_active
     if "fetch_associated" in fields and payload.fetch_associated is not None:

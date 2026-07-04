@@ -13,8 +13,24 @@ import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId, cn } from "@/lib/utils";
-import { Plus, Save, Loader2, Pencil } from "lucide-react";
-import type { FieldMapping, MappingTemplate, SourceField, KontractsField } from "@/types";
+import { Plus, Save, Loader2, Pencil, Trash2, Filter } from "lucide-react";
+import type { FieldMapping, MappingTemplate, SourceField, KontractsField, SourceFilter, FilterOperator } from "@/types";
+
+const FILTER_OPERATORS: { value: FilterOperator; label: string; needsValue: boolean }[] = [
+  { value: "equals", label: "equals", needsValue: true },
+  { value: "not_equals", label: "not equals", needsValue: true },
+  { value: "contains", label: "contains", needsValue: true },
+  { value: "not_contains", label: "does not contain", needsValue: true },
+  { value: "starts_with", label: "starts with", needsValue: true },
+  { value: "ends_with", label: "ends with", needsValue: true },
+  { value: "is_empty", label: "is empty", needsValue: false },
+  { value: "is_not_empty", label: "is not empty", needsValue: false },
+  { value: "greater_than", label: "greater than", needsValue: true },
+  { value: "less_than", label: "less than", needsValue: true },
+  { value: "gte", label: "≥", needsValue: true },
+  { value: "lte", label: "≤", needsValue: true },
+  { value: "regex", label: "matches regex", needsValue: true },
+];
 
 interface Props {
   template: MappingTemplate;
@@ -29,6 +45,8 @@ interface Props {
       kontracts_method?: string;
       lookup_table_name?: string | null;
       update_existing?: boolean;
+      source_filters?: SourceFilter[];
+      filter_match?: string;
       field_mappings: FieldMapping[];
       source_connection_id?: number | null;
       target_connection_id?: number | null;
@@ -52,6 +70,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
   const [lookupTableName, setLookupTableName] = useState(template.lookup_table_name ?? "");
   const [updateExisting, setUpdateExisting] = useState(template.update_existing ?? false);
+  const [sourceFilters, setSourceFilters] = useState<SourceFilter[]>(template.source_filters ?? []);
+  const [filterMatch, setFilterMatch] = useState(template.filter_match ?? "all");
   const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
   const [sourceObjectId, setSourceObjectId] = useState<number | undefined>(undefined);
   const [assocModule, setAssocModule] = useState(template.assoc_module ?? "");
@@ -80,6 +100,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setKontractsMethod(template.kontracts_method ?? "POST");
     setLookupTableName(template.lookup_table_name ?? "");
     setUpdateExisting(template.update_existing ?? false);
+    setSourceFilters(template.source_filters ?? []);
+    setFilterMatch(template.filter_match ?? "all");
     setSourceConnId(template.source_connection_id ?? undefined);
     setTargetConnId(template.target_connection_id ?? undefined);
     setFetchAssociatedObjects(template.fetch_associated ?? false);
@@ -173,13 +195,17 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     () => mappings.map((m) => m.source_field).filter((f): f is string => !!f),
     [mappings]
   );
+  const activeFilters = useMemo(
+    () => sourceFilters.filter((f) => f.field),
+    [sourceFilters]
+  );
   const {
     data: previewData,
     isFetching: previewLoading,
     error: previewError,
   } = useQuery({
-    queryKey: ["source-preview", sourceObject, sourceModule, previewFieldNames.join(","), sourceConnId],
-    queryFn: () => sourceApi.preview(sourceObject, sourceModule || undefined, previewFieldNames, sourceConnId),
+    queryKey: ["source-preview", sourceObject, sourceModule, previewFieldNames.join(","), sourceConnId, JSON.stringify(activeFilters), filterMatch],
+    queryFn: () => sourceApi.preview(sourceObject, sourceModule || undefined, previewFieldNames, sourceConnId, activeFilters, filterMatch),
     enabled: !!sourceObject,
   });
 
@@ -204,6 +230,16 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
         use_associated: false,
       },
     ]);
+  };
+
+  const addFilter = () => {
+    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "" }]);
+  };
+  const updateFilter = (index: number, patch: Partial<SourceFilter>) => {
+    setSourceFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  };
+  const removeFilter = (index: number) => {
+    setSourceFilters((prev) => prev.filter((_, i) => i !== index));
   };
 
   const addAssocRow = () => {
@@ -242,6 +278,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     kontracts_method: kontractsMethod,
     lookup_table_name: lookupTableName.trim() || null,
     update_existing: updateExisting,
+    source_filters: sourceFilters.filter((f) => f.field),
+    filter_match: filterMatch,
     field_mappings: mappings,
     source_connection_id: sourceConnId ?? null,
     target_connection_id: targetConnId ?? null,
@@ -392,6 +430,74 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               </div>
             </div>
 
+            {/* Source Record Filters */}
+            <div className="space-y-2 border-l-4 border-l-amber-400 pl-3 rounded-sm">
+              <div className="flex items-center gap-2">
+                <Filter className="h-3.5 w-3.5 text-amber-500" />
+                <Label className="text-xs font-medium">Source Record Filters</Label>
+                {sourceFilters.length > 1 && (
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <span>match</span>
+                    <Select value={filterMatch} onValueChange={setFilterMatch}>
+                      <SelectTrigger className="h-6 w-[70px] text-[11px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">all</SelectItem>
+                        <SelectItem value="any">any</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span>of the conditions</span>
+                  </div>
+                )}
+              </div>
+
+              {sourceFilters.map((flt, i) => {
+                const opMeta = FILTER_OPERATORS.find((o) => o.value === flt.operator);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <SearchableSelect
+                      options={sourceFields.map((f) => ({
+                        value: `${f.section || "General"}||${f.name}`,
+                        label: f.label && f.label !== f.name ? `${f.name} (${f.label})` : f.name,
+                      }))}
+                      value={flt.field}
+                      onValueChange={(v) => updateFilter(i, { field: v })}
+                      disabled={!sourceObject || sourceLoading}
+                      placeholder={!sourceObject ? "Select a business object first..." : "Select field..."}
+                      searchPlaceholder="Search fields..."
+                      widthClass="w-[260px]"
+                    />
+                    <Select value={flt.operator} onValueChange={(v) => updateFilter(i, { operator: v as FilterOperator })}>
+                      <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FILTER_OPERATORS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {opMeta?.needsValue !== false && (
+                      <Input
+                        className="h-8 w-[200px] text-xs"
+                        value={flt.value ?? ""}
+                        onChange={(e) => updateFilter(i, { value: e.target.value })}
+                        placeholder="value"
+                      />
+                    )}
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-red-500" onClick={() => removeFilter(i)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+
+              <Button size="sm" variant="outline" onClick={addFilter} className="h-7 text-xs border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950">
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add Filter
+              </Button>
+              <p className="text-[10px] text-muted-foreground">
+                Only source records matching these conditions are synced. String comparisons are case-insensitive.
+              </p>
+            </div>
+
             {/* Fetch Associated Objects */}
             <div className={cn("flex items-center gap-2 border-l-4 pl-3 rounded-sm transition-colors", fetchAssociatedObjects ? "border-l-purple-400" : "border-l-transparent")}>
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
@@ -460,6 +566,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                 {kontractsEndpoint && (
                   <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
                     {kontractsMethod} {kontractsEndpoint}
+                  </span>
+                )}
+                {activeFilters.length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 px-1.5 py-0.5">
+                    <Filter className="h-3 w-3" />
+                    {activeFilters.length} filter{activeFilters.length > 1 ? `s (${filterMatch})` : ""}
                   </span>
                 )}
               </div>
