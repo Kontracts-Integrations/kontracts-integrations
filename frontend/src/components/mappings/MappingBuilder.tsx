@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MappingRow } from "./MappingRow";
 import { FieldPanel } from "./FieldPanel";
 import { DataPreview } from "./DataPreview";
 import { generateId, cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
-import { Plus, Save, Loader2, Pencil, Trash2, Filter, ListChecks } from "lucide-react";
+import { Plus, Save, Loader2, Pencil, Trash2, Filter, ListChecks, Check, X, KeyRound } from "lucide-react";
 import type { FieldMapping, MappingTemplate, SourceField, KontractsField, SourceFilter, FilterOperator, TransformType } from "@/types";
 
 const FILTER_OPERATORS: { value: FilterOperator; label: string; needsValue: boolean }[] = [
@@ -45,6 +47,7 @@ interface Props {
       kontracts_endpoint?: string | null;
       kontracts_method?: string;
       lookup_table_name?: string | null;
+      lookup_key_fields?: string[];
       update_existing?: boolean;
       source_filters?: SourceFilter[];
       filter_match?: string;
@@ -70,6 +73,8 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
   const [lookupTableName, setLookupTableName] = useState(template.lookup_table_name ?? "");
+  const [lookupKeyFields, setLookupKeyFields] = useState<string[]>(template.lookup_key_fields ?? []);
+  const [lookupKeyOpen, setLookupKeyOpen] = useState(false);
   const [updateExisting, setUpdateExisting] = useState(template.update_existing ?? false);
   const [sourceFilters, setSourceFilters] = useState<SourceFilter[]>(template.source_filters ?? []);
   const [filterMatch, setFilterMatch] = useState(template.filter_match ?? "all");
@@ -100,6 +105,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
     setKontractsMethod(template.kontracts_method ?? "POST");
     setLookupTableName(template.lookup_table_name ?? "");
+    setLookupKeyFields(template.lookup_key_fields ?? []);
     setUpdateExisting(template.update_existing ?? false);
     setSourceFilters(template.source_filters ?? []);
     setFilterMatch(template.filter_match ?? "all");
@@ -312,6 +318,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     kontracts_endpoint: kontractsEndpoint || null,
     kontracts_method: kontractsMethod,
     lookup_table_name: lookupTableName.trim() || null,
+    lookup_key_fields: lookupKeyFields,
     update_existing: updateExisting,
     source_filters: sourceFilters.filter((f) => f.field),
     filter_match: filterMatch,
@@ -435,6 +442,100 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                   When on, subsequent runs PUT records whose mapped payload changed instead of skipping them.
                 </p>
               </div>
+            </div>
+
+            {/* Lookup Key Fields — source fields indexed for later target-id lookups */}
+            <div className="space-y-1 border-l-4 border-l-amber-400 pl-3 rounded-sm">
+              <Label className="flex items-center gap-1.5 text-xs">
+                <KeyRound className="h-3.5 w-3.5 text-amber-500" />
+                Lookup Key Fields
+              </Label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {lookupKeyFields.map((f) => {
+                  const [sec, nm] = f.includes("||") ? f.split("||", 2) : ["", f];
+                  return (
+                    <span
+                      key={f}
+                      className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                    >
+                      {sec && <span className="opacity-60">{sec}::</span>}
+                      <span className="font-mono">{nm}</span>
+                      <button
+                        type="button"
+                        onClick={() => setLookupKeyFields((prev) => prev.filter((x) => x !== f))}
+                        className="opacity-60 hover:opacity-100"
+                        title="Remove key field"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+                <Popover open={lookupKeyOpen} onOpenChange={setLookupKeyOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      role="combobox"
+                      disabled={sourceLoading}
+                      className="h-7 text-xs"
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      {sourceLoading ? "Loading fields..." : "Add key field"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[400px] p-0" align="start">
+                    <Command
+                      filter={(value, search) => {
+                        const fieldName = value.includes("||") ? value.split("||")[1] : value;
+                        const field = sourceFields.find((f) => f.name === fieldName);
+                        const haystack = `${fieldName} ${field?.label ?? ""}`.toLowerCase();
+                        return haystack.includes(search.toLowerCase()) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Search fields..." className="h-9" />
+                      <CommandList>
+                        <CommandEmpty>No fields found.</CommandEmpty>
+                        {(() => {
+                          const grouped = sourceFields.reduce((acc, f) => {
+                            const sec = f.section || "General";
+                            (acc[sec] ||= []).push(f);
+                            return acc;
+                          }, {} as Record<string, SourceField[]>);
+                          return Object.entries(grouped).map(([section, fields]) => (
+                            <CommandGroup key={section} heading={section}>
+                              {fields.map((f) => {
+                                const composite = `${section}||${f.name}`;
+                                const selected = lookupKeyFields.includes(composite);
+                                return (
+                                  <CommandItem
+                                    key={composite}
+                                    value={composite}
+                                    onSelect={() =>
+                                      setLookupKeyFields((prev) =>
+                                        prev.includes(composite)
+                                          ? prev.filter((x) => x !== composite)
+                                          : [...prev, composite]
+                                      )
+                                    }
+                                  >
+                                    <Check className={cn("mr-2 h-3.5 w-3.5", selected ? "opacity-100" : "opacity-0")} />
+                                    <span className="font-mono">{f.name}</span>
+                                    {f.label !== f.name && <span className="ml-1 text-muted-foreground">({f.label})</span>}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          ));
+                        })()}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Values of these source fields are indexed alongside the created ID in the lookup table, so later mappings can resolve the target ID by matching on them (not just the record ID).
+              </p>
             </div>
 
             {/* TRIRIGA Module + BO */}

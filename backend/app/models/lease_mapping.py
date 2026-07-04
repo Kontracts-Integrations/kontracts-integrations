@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import List, Optional
 
 from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -26,6 +28,11 @@ class LeaseMapping(Base):
     tririga_lease_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     tririga_record_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     kontracts_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # Additional business-key values (from the writing mapping's configured
+    # lookup_key_fields) that also resolve to this kontracts_id, so subsequent
+    # mappings can look the ID up by those source field values, not just the
+    # record/lease id. Stored as a JSON list of strings.
+    lookup_keys: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

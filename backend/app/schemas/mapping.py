@@ -61,6 +61,13 @@ class MappingTemplateCreate(BaseModel):
         default=False,
         description="Update already-synced records whose payload changed instead of skipping",
     )
+    lookup_key_fields: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Source field names whose values are indexed as lookup keys for the "
+            "produced Kontracts ID, so later mappings can resolve it by these keys"
+        ),
+    )
     source_filters: List[SourceFilter] = Field(default_factory=list)
     filter_match: str = Field(default="all", pattern="^(all|any)$")
     field_mappings: List[FieldMapping] = Field(default_factory=list)
@@ -82,6 +89,7 @@ class MappingTemplateUpdate(BaseModel):
     kontracts_method: Optional[str] = None
     lookup_table_name: Optional[str] = Field(default=None, max_length=255)
     update_existing: Optional[bool] = None
+    lookup_key_fields: Optional[List[str]] = None
     source_filters: Optional[List[SourceFilter]] = None
     filter_match: Optional[str] = Field(default=None, pattern="^(all|any)$")
     field_mappings: Optional[List[FieldMapping]] = None
@@ -90,6 +98,18 @@ class MappingTemplateUpdate(BaseModel):
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None
     assoc_string: Optional[str] = None
+
+
+class MappingImportPayload(BaseModel):
+    """A previously exported mapping template file.
+
+    The wrapper metadata (``kontracts_mapping_export``/``exported_at``) is optional
+    so a bare ``MappingTemplateCreate``-shaped object can also be imported.
+    """
+
+    kontracts_mapping_export: Optional[str] = None
+    exported_at: Optional[str] = None
+    template: MappingTemplateCreate
 
 
 class MappingVersionResponse(BaseModel):
@@ -116,6 +136,7 @@ class MappingTemplateResponse(BaseModel):
     kontracts_method: Optional[str]
     lookup_table_name: Optional[str] = None
     update_existing: bool = False
+    lookup_key_fields: List[str] = Field(default_factory=list)
     source_filters: List[SourceFilter] = Field(default_factory=list)
     filter_match: str = "all"
     fetch_associated: bool = False

@@ -11,6 +11,7 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.mapping_engine.filters import _resolve as _resolve_source_field
 from app.models.lease_mapping import DEFAULT_LOOKUP_TABLE, LeaseMapping
 from app.models.log_entry import LogEntry, LogLevel
 from app.models.mapping import MappingTemplate, MappingVersion
@@ -19,6 +20,23 @@ from app.models.sync_run import RecordStatus, RunStatus, SyncRecord, SyncRun
 from app.utils.hashing import payload_hash
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_lookup_keys(source_record: Dict[str, Any], fields: List[str]) -> List[str]:
+    """Resolve each configured source field to a string key value.
+
+    Blank/None values are dropped. Field resolution mirrors the mapping engine
+    (``Section||field`` prefixes stripped, ``Associated.`` paths supported).
+    """
+    keys: List[str] = []
+    for field in fields or []:
+        value = _resolve_source_field(source_record, field)
+        if value is None:
+            continue
+        sval = str(value).strip()
+        if sval and sval not in keys:
+            keys.append(sval)
+    return keys
 
 
 class SyncService:
@@ -159,6 +177,10 @@ class SyncService:
             write_table = DEFAULT_LOOKUP_TABLE
         should_write_lookup = bool(write_table)
 
+        # Source fields whose values are also indexed as lookup keys for the
+        # produced kontracts_id (so later mappings can resolve it by business key).
+        lookup_key_fields = list(template.lookup_key_fields or [])
+
         # Pre-load all id mappings for deduplication and lookup transforms,
         # partitioned by their named lookup table.
         existing_result = await self.db.execute(
@@ -167,6 +189,7 @@ class SyncService:
                 LeaseMapping.tririga_record_id,
                 LeaseMapping.tririga_lease_id,
                 LeaseMapping.kontracts_id,
+                LeaseMapping.lookup_keys,
             )
         )
         lease_rows = existing_result.fetchall()
@@ -196,13 +219,17 @@ class SyncService:
             for row in state_result.fetchall():
                 sync_state[str(row[0])] = (row[1], row[2])
 
-        # Build per-table lookup maps: {table_name: {source_id: kontracts_id}}.
+        # Build per-table lookup maps: {table_name: {source_key: kontracts_id}}.
+        # Keys are the record id, the lease id, and any indexed business keys.
         lookup_tables: Dict[str, Dict[str, str]] = {}
         for row in lease_rows:
             table = lookup_tables.setdefault(row[0], {})
             table[str(row[1])] = row[3]
             if row[2]:
                 table[str(row[2])] = row[3]
+            for key in (row[4] or []):
+                if key:
+                    table[str(key)] = row[3]
         engine_context = {
             "lookup_tables": lookup_tables,
             # Backward-compat: the default table under its legacy context key.
@@ -515,6 +542,7 @@ class SyncService:
                                         tririga_lease_id=tririga_lease_id,
                                         tririga_record_id=tririga_record_id,
                                         kontracts_id=kontracts_id,
+                                        lookup_keys=_extract_lookup_keys(source_record, lookup_key_fields) or None,
                                     ))
 
                                 if update_existing:
@@ -814,6 +842,7 @@ class SyncService:
                                 tririga_lease_id=tririga_lease_id,
                                 tririga_record_id=tririga_record_id,
                                 kontracts_id=kontracts_id,
+                                lookup_keys=_extract_lookup_keys(source_record, lookup_key_fields) or None,
                             ))
 
                         if update_existing:

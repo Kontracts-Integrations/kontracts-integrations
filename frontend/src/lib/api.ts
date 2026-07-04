@@ -249,6 +249,20 @@ export const mappingsApi = {
     const r = await http.get<MappingVersion[]>(`/mappings/${id}/versions`);
     return r.data;
   },
+  export: async (id: number): Promise<Blob> => {
+    // Authenticated blob download (a plain window.open can't attach the Bearer token).
+    const r = await http.get(`/mappings/${id}/export`, { responseType: "blob" });
+    return r.data as Blob;
+  },
+  import: async (
+    payload: Record<string, unknown>,
+    nameOverride?: string
+  ): Promise<MappingTemplate> => {
+    const r = await http.post<MappingTemplate>("/mappings/import", payload, {
+      params: nameOverride ? { name_override: nameOverride } : undefined,
+    });
+    return r.data;
+  },
   previewMapping: async (
     id: number,
     records: Record<string, unknown>[],

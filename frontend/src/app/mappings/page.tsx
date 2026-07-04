@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mappingsApi, runsApi, connectionsApi, sourceApi, kontractsApi } from "@/lib/api";
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "@/components/ui/toaster";
 import { cn, formatRelativeTime, getStatusColor } from "@/lib/utils";
-import { Plus, FileCode, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, FileCode, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle, Download, Upload } from "lucide-react";
 import type { MappingTemplate } from "@/types";
 
 function MappingCard({ mapping }: { mapping: MappingTemplate }) {
@@ -28,6 +28,23 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
     },
     onError: (err: Error) => {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: () => mappingsApi.export(mapping.id),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mapping-${mapping.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "mapping"}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -68,6 +85,20 @@ function MappingCard({ mapping }: { mapping: MappingTemplate }) {
                 <Pencil className="h-4 w-4" />
                 <span className="ml-1 hidden sm:inline">Edit</span>
               </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => exportMutation.mutate()}
+              disabled={exportMutation.isPending}
+              title="Export this mapping template as a JSON file"
+            >
+              {exportMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span className="ml-1 hidden sm:inline">Export</span>
             </Button>
             <Button
               size="sm"
@@ -384,15 +415,51 @@ function CreateMappingDialog({
 
 export default function MappingsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
 
   const { data: mappings, isLoading } = useQuery({
     queryKey: ["mappings"],
     queryFn: () => mappingsApi.list(),
   });
 
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("Selected file is not valid JSON");
+      }
+      // Accept both the exported wrapper ({ template: {...} }) and a bare template.
+      const payload = "template" in parsed ? parsed : { template: parsed };
+      return mappingsApi.import(payload);
+    },
+    onSuccess: (mapping) => {
+      qc.invalidateQueries({ queryKey: ["mappings"] });
+      toast({ title: "Mapping imported", description: `"${mapping.name}" created from file` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) importMutation.mutate(file);
+    e.target.value = ""; // allow re-selecting the same file
+  };
 
   return (
     <MainLayout title="Mapping Templates">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleFileSelected}
+      />
       <div className="flex-1 overflow-y-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -400,9 +467,24 @@ export default function MappingsPage() {
               {mappings?.length ?? 0} mapping templates configured
             </p>
           </div>
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            Create Mapping Template
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importMutation.isPending}
+            >
+              {importMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Import
+            </Button>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              Create Mapping Template
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
