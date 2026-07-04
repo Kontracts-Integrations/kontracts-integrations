@@ -39,6 +39,10 @@ class MappingTemplateCreate(BaseModel):
         max_length=255,
         description="Named table this mapping writes produced IDs into for subsequent lookups",
     )
+    update_existing: bool = Field(
+        default=False,
+        description="Update already-synced records whose payload changed instead of skipping",
+    )
     field_mappings: List[FieldMapping] = Field(default_factory=list)
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
@@ -57,6 +61,7 @@ class MappingTemplateUpdate(BaseModel):
     kontracts_endpoint: Optional[str] = None
     kontracts_method: Optional[str] = None
     lookup_table_name: Optional[str] = Field(default=None, max_length=255)
+    update_existing: Optional[bool] = None
     field_mappings: Optional[List[FieldMapping]] = None
     is_active: Optional[bool] = None
     fetch_associated: Optional[bool] = None
@@ -88,6 +93,7 @@ class MappingTemplateResponse(BaseModel):
     kontracts_endpoint: Optional[str]
     kontracts_method: Optional[str]
     lookup_table_name: Optional[str] = None
+    update_existing: bool = False
     fetch_associated: bool = False
     assoc_module: Optional[str] = None
     assoc_object: Optional[str] = None

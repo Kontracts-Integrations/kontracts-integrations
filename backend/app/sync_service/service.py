@@ -7,14 +7,16 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.lease_mapping import DEFAULT_LOOKUP_TABLE, LeaseMapping
 from app.models.log_entry import LogEntry, LogLevel
 from app.models.mapping import MappingTemplate, MappingVersion
+from app.models.record_sync_state import RecordSyncState
 from app.models.sync_run import RecordStatus, RunStatus, SyncRecord, SyncRun
+from app.utils.hashing import payload_hash
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +150,30 @@ class SyncService:
         )
         lease_rows = existing_result.fetchall()
 
+        # Upsert mode: when enabled, subsequent runs update changed records rather
+        # than skipping them, so the plain "already synced" skip is disabled and the
+        # per-record hash decision (see _plan_record) drives create/update/skip.
+        update_existing = bool(template.update_existing)
+
         # Skip records already present in the table this mapping writes to.
         already_synced = (
             {row[1] for row in lease_rows if row[0] == write_table}
-            if should_write_lookup else set()
+            if should_write_lookup and not update_existing else set()
         )
+
+        # Pre-load prior sync state (kontracts_id + payload hash per source record)
+        # for this mapping, used to decide create vs update vs skip on re-runs.
+        sync_state: Dict[str, tuple] = {}
+        if update_existing:
+            state_result = await self.db.execute(
+                select(
+                    RecordSyncState.source_record_id,
+                    RecordSyncState.kontracts_id,
+                    RecordSyncState.payload_hash,
+                ).where(RecordSyncState.mapping_template_id == template.id)
+            )
+            for row in state_result.fetchall():
+                sync_state[str(row[0])] = (row[1], row[2])
 
         # Build per-table lookup maps: {table_name: {source_id: kontracts_id}}.
         lookup_tables: Dict[str, Dict[str, str]] = {}
@@ -166,6 +187,10 @@ class SyncService:
             # Backward-compat: the default table under its legacy context key.
             "lease_mappings": lookup_tables.get(DEFAULT_LOOKUP_TABLE, {}),
         }
+
+        # Existing IDs from this mapping's lookup table, used to update previously
+        # created records that predate the sync-state table.
+        existing_lookup = lookup_tables.get(write_table, {}) if should_write_lookup else {}
 
         await self._log(
             run_id, LogLevel.info,
@@ -336,7 +361,89 @@ class SyncService:
                             extra={"record_id": record_id},
                         )
 
-            # 2. Push all valid payloads to Kontracts in chunked bulk requests!
+            # 1b. Upsert partitioning: split validated records into skips (unchanged),
+            # updates (changed / previously created), and creates. Only creates go
+            # through the bulk endpoint; updates are applied as individual PUTs.
+            if update_existing and valid_records:
+                creates = []
+                updates = []
+                for rec in valid_records:
+                    action, plan_kid, new_hash = self._plan_record(
+                        rec["record_id"], rec["mapped_payload"], sync_state, existing_lookup, update_existing
+                    )
+                    rec["new_hash"] = new_hash
+                    if action == "skip":
+                        skipped_count += 1
+                        await self._save_record(
+                            run_id=run_id,
+                            tririga_id=rec["record_id"],
+                            kontracts_id=plan_kid,
+                            status=RecordStatus.skipped,
+                            source_data=rec["source_record"],
+                            mapped_data=rec["mapped_payload"],
+                            error="Unchanged since last sync",
+                        )
+                    elif action == "update":
+                        rec["kontracts_id"] = plan_kid
+                        updates.append(rec)
+                    else:
+                        creates.append(rec)
+
+                if updates:
+                    await self._log(
+                        run_id, LogLevel.info,
+                        f"Updating {len(updates)} changed records via PUT",
+                        "sync_service",
+                    )
+
+                    async def _update_one(rec):
+                        try:
+                            res = await kontracts_client.update_record(
+                                endpoint=template.kontracts_endpoint or "/api/v1/payments/bulk",
+                                kontracts_id=rec["kontracts_id"],
+                                payload=rec["mapped_payload"],
+                                method="PUT",
+                            )
+                            return {"status": "success", "rec": rec, "result": res}
+                        except Exception as e:
+                            return {"status": "failed", "rec": rec, "error": str(e)}
+
+                    for ur in await asyncio.gather(*[_update_one(r) for r in updates]):
+                        rec = ur["rec"]
+                        if ur["status"] == "success":
+                            kontracts_id = str((ur["result"] or {}).get("id", "") or "") or rec["kontracts_id"]
+                            await self._record_sync_state(
+                                template.id, rec["record_id"], kontracts_id, rec["new_hash"], sync_state
+                            )
+                            await self._save_record(
+                                run_id=run_id,
+                                tririga_id=rec["record_id"],
+                                kontracts_id=kontracts_id,
+                                status=RecordStatus.success,
+                                source_data=rec["source_record"],
+                                mapped_data=rec["mapped_payload"],
+                            )
+                            success_count += 1
+                        else:
+                            failed_count += 1
+                            await self._save_record(
+                                run_id=run_id,
+                                tririga_id=rec["record_id"],
+                                status=RecordStatus.failed,
+                                source_data=rec["source_record"],
+                                mapped_data=rec["mapped_payload"],
+                                error=ur["error"],
+                            )
+                            await self._log(
+                                run_id, LogLevel.error,
+                                f"Record {rec['record_id']} update failed: {ur['error']}",
+                                "sync_service",
+                                extra={"record_id": rec["record_id"]},
+                            )
+
+                valid_records = creates
+
+            # 2. Push all valid (create) payloads to Kontracts in chunked bulk requests!
             if valid_records:
                 bulk_batch_size = 1000
                 await self._log(
@@ -388,6 +495,13 @@ class SyncService:
                                         tririga_record_id=tririga_record_id,
                                         kontracts_id=kontracts_id,
                                     ))
+
+                                if update_existing:
+                                    await self._record_sync_state(
+                                        template.id, record_id, kontracts_id,
+                                        rec.get("new_hash") or payload_hash(mapped_payload),
+                                        sync_state,
+                                    )
 
                                 await self._save_record(
                                     run_id=run_id,
@@ -608,44 +722,83 @@ class SyncService:
                     await self.db.commit()
                     continue
 
-                # 2. Push to Kontracts concurrently (this is the slow network part!)
-                async def push_single_record(record_id, source_record, mapped_payload):
-                    try:
-                        res = await kontracts_client.push_record(
-                            endpoint=template.kontracts_endpoint or "/api/v1/leases/",
-                            method=template.kontracts_method or "POST",
-                            payload=mapped_payload,
+                # 2. Plan create/update/skip for each record (upsert-aware)
+                planned = []  # (record_id, source_record, mapped_payload, action, kontracts_id, new_hash)
+                for record_id, source_record, mapped_payload in tasks_to_run:
+                    action, plan_kid, new_hash = self._plan_record(
+                        record_id, mapped_payload, sync_state, existing_lookup, update_existing
+                    )
+                    if action == "skip":
+                        skipped_count += 1
+                        await self._save_record(
+                            run_id=run_id,
+                            tririga_id=record_id,
+                            kontracts_id=plan_kid,
+                            status=RecordStatus.skipped,
+                            source_data=source_record,
+                            mapped_data=mapped_payload,
+                            error="Unchanged since last sync",
                         )
-                        return {"status": "success", "record_id": record_id, "source_record": source_record, "mapped_payload": mapped_payload, "result": res}
-                    except Exception as e:
-                        return {"status": "failed", "record_id": record_id, "source_record": source_record, "mapped_payload": mapped_payload, "error": str(e)}
+                        continue
+                    planned.append((record_id, source_record, mapped_payload, action, plan_kid, new_hash))
 
-                push_tasks = [
-                    push_single_record(rid, src, pl)
-                    for rid, src, pl in tasks_to_run
-                ]
-                
+                if not planned:
+                    run.success_count = success_count
+                    run.failed_count = failed_count
+                    run.skipped_count = skipped_count
+                    await self.db.commit()
+                    continue
+
+                # 3. Push to Kontracts concurrently (this is the slow network part!)
+                async def push_single_record(record_id, source_record, mapped_payload, action, plan_kid, new_hash):
+                    try:
+                        if action == "update":
+                            res = await kontracts_client.update_record(
+                                endpoint=template.kontracts_endpoint or "/api/v1/leases/",
+                                kontracts_id=plan_kid,
+                                payload=mapped_payload,
+                                method="PUT",
+                            )
+                        else:
+                            res = await kontracts_client.push_record(
+                                endpoint=template.kontracts_endpoint or "/api/v1/leases/",
+                                method=template.kontracts_method or "POST",
+                                payload=mapped_payload,
+                            )
+                        return {"status": "success", "action": action, "record_id": record_id, "source_record": source_record, "mapped_payload": mapped_payload, "plan_kid": plan_kid, "new_hash": new_hash, "result": res}
+                    except Exception as e:
+                        return {"status": "failed", "action": action, "record_id": record_id, "source_record": source_record, "mapped_payload": mapped_payload, "error": str(e)}
+
+                push_tasks = [push_single_record(*p) for p in planned]
+
                 results = await asyncio.gather(*push_tasks)
 
-                # 3. Process and write results serially (safe for SQLAlchemy)
+                # 4. Process and write results serially (safe for SQLAlchemy)
                 for res in results:
                     record_id = res["record_id"]
                     source_record = res["source_record"]
                     mapped_payload = res["mapped_payload"]
-                    
+
                     if res["status"] == "success":
                         result_data = res["result"]
-                        kontracts_id = str(result_data.get("id", "unknown"))
+                        action = res["action"]
+                        kontracts_id = str(result_data.get("id", "") or "") or res["plan_kid"] or "unknown"
                         tririga_lease_id = str(result_data.get("lease_id", ""))
                         tririga_record_id = record_id
 
-                        if should_write_lookup:
+                        # New lookup rows are only written for creates (updates reuse the id).
+                        if should_write_lookup and action == "create":
                             self.db.add(LeaseMapping(
                                 table_name=write_table,
                                 tririga_lease_id=tririga_lease_id,
                                 tririga_record_id=tririga_record_id,
                                 kontracts_id=kontracts_id,
                             ))
+
+                        if update_existing:
+                            await self._record_sync_state(
+                                template.id, record_id, kontracts_id, res["new_hash"], sync_state
+                            )
 
                         await self._save_record(
                             run_id=run_id,
@@ -660,7 +813,7 @@ class SyncService:
                         await self._log(
                             run_id,
                             LogLevel.info,
-                            f"Record {record_id} -> Kontracts {kontracts_id} (success)",
+                            f"Record {record_id} -> Kontracts {kontracts_id} ({action}d)",
                             "sync_service",
                             extra={"tririga_id": record_id, "kontracts_id": kontracts_id},
                         )
@@ -811,6 +964,62 @@ class SyncService:
             client_secret=settings.kontracts_client_secret or "",
             audience=settings.kontracts_audience or "",
         )
+
+    def _plan_record(
+        self,
+        record_id: str,
+        mapped_payload: Dict[str, Any],
+        sync_state: Dict[str, tuple],
+        existing_lookup: Dict[str, str],
+        update_existing: bool,
+    ) -> tuple:
+        """Decide how to push a record: returns (action, kontracts_id, new_hash).
+
+        action is one of "create", "update", "skip". When update_existing is off
+        every record is a create (prior behavior).
+        """
+        new_hash = payload_hash(mapped_payload)
+        if not update_existing:
+            return "create", None, new_hash
+
+        prior = sync_state.get(record_id)
+        if prior:
+            kontracts_id, old_hash = prior
+            if old_hash == new_hash:
+                return "skip", kontracts_id, new_hash
+            return "update", kontracts_id, new_hash
+
+        # No tracked state yet — reuse an existing lookup-table id if present so a
+        # previously created record is updated instead of duplicated.
+        kontracts_id = existing_lookup.get(record_id)
+        if kontracts_id:
+            return "update", kontracts_id, new_hash
+        return "create", None, new_hash
+
+    async def _record_sync_state(
+        self,
+        template_id: int,
+        source_record_id: str,
+        kontracts_id: str,
+        new_hash: str,
+        sync_state: Dict[str, tuple],
+    ) -> None:
+        """Persist (or update) the per-record sync state for upsert on future runs."""
+        if source_record_id in sync_state:
+            await self.db.execute(
+                sql_update(RecordSyncState)
+                .where(RecordSyncState.mapping_template_id == template_id)
+                .where(RecordSyncState.source_record_id == source_record_id)
+                .values(kontracts_id=kontracts_id, payload_hash=new_hash)
+            )
+        else:
+            self.db.add(RecordSyncState(
+                mapping_template_id=template_id,
+                source_record_id=source_record_id,
+                kontracts_id=kontracts_id,
+                payload_hash=new_hash,
+            ))
+        sync_state[source_record_id] = (kontracts_id, new_hash)
 
     async def _save_record(
         self,

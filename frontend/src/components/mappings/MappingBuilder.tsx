@@ -28,6 +28,7 @@ interface Props {
       kontracts_endpoint?: string | null;
       kontracts_method?: string;
       lookup_table_name?: string | null;
+      update_existing?: boolean;
       field_mappings: FieldMapping[];
       source_connection_id?: number | null;
       target_connection_id?: number | null;
@@ -50,6 +51,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [kontractsEndpoint, setKontractsEndpoint] = useState(template.kontracts_endpoint ?? "");
   const [kontractsMethod, setKontractsMethod] = useState(template.kontracts_method ?? "POST");
   const [lookupTableName, setLookupTableName] = useState(template.lookup_table_name ?? "");
+  const [updateExisting, setUpdateExisting] = useState(template.update_existing ?? false);
   const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
   const [sourceObjectId, setSourceObjectId] = useState<number | undefined>(undefined);
   const [assocModule, setAssocModule] = useState(template.assoc_module ?? "");
@@ -77,6 +79,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setKontractsEndpoint(template.kontracts_endpoint ?? "");
     setKontractsMethod(template.kontracts_method ?? "POST");
     setLookupTableName(template.lookup_table_name ?? "");
+    setUpdateExisting(template.update_existing ?? false);
     setSourceConnId(template.source_connection_id ?? undefined);
     setTargetConnId(template.target_connection_id ?? undefined);
     setFetchAssociatedObjects(template.fetch_associated ?? false);
@@ -238,6 +241,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     kontracts_endpoint: kontractsEndpoint || null,
     kontracts_method: kontractsMethod,
     lookup_table_name: lookupTableName.trim() || null,
+    update_existing: updateExisting,
     field_mappings: mappings,
     source_connection_id: sourceConnId ?? null,
     target_connection_id: targetConnId ?? null,
@@ -341,6 +345,21 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Names the table this mapping writes created IDs into, so later mappings can look them up.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Re-run Behavior</Label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer pt-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-primary"
+                    checked={updateExisting}
+                    onChange={(e) => setUpdateExisting(e.target.checked)}
+                  />
+                  Update changed records on re-run
+                </label>
+                <p className="text-[10px] text-muted-foreground">
+                  When on, subsequent runs PUT records whose mapped payload changed instead of skipping them.
                 </p>
               </div>
             </div>

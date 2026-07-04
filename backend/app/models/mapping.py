@@ -36,6 +36,10 @@ class MappingTemplate(Base):
     # pairs into on success, so subsequent mappings can look those IDs up.
     lookup_table_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # When True, subsequent runs update already-synced records whose mapped payload
+    # changed (PUT to {endpoint}/{kontracts_id}) instead of skipping them.
+    update_existing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     fetch_associated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assoc_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     assoc_object: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
