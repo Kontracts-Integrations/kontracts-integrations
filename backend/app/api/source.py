@@ -146,13 +146,21 @@ async def preview_data(
 ):
     connector = await _get_connector(payload.connection_id, db)
     try:
+        # Fields referenced only by filters must also be fetched, else the filter
+        # has no value to compare against and drops every record.
+        field_names = list(payload.field_names or [])
+        for flt in (payload.source_filters or []):
+            fld = flt.get("field")
+            if fld and fld not in field_names:
+                field_names.append(fld)
+
         # When filters are active, fetch a larger sample so matching records
         # aren't missed, then filter and cap to the requested preview size.
         fetch_count = 200 if payload.source_filters else payload.max_records
         records = await connector.preview_records(
             object_name=payload.object_name,
             module_name=payload.module_name,
-            field_names=payload.field_names,
+            field_names=field_names or None,
             query_name=payload.query_name,
             max_records=fetch_count,
         )

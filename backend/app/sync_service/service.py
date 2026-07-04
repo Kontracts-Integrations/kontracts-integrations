@@ -79,6 +79,12 @@ class SyncService:
             fm["source_field"] for fm in field_mappings_data
             if fm.get("source_field")
         ]
+        # Fields referenced only by filters must also be fetched, otherwise the
+        # filter has no value to compare against and drops every record.
+        for flt in (template.source_filters or []):
+            fld = flt.get("field")
+            if fld and fld not in source_field_names:
+                source_field_names.append(fld)
 
         # Fetch TRIRIGA data via runDynamicQuery
         await self._log(
