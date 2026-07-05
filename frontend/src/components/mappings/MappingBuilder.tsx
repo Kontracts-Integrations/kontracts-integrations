@@ -137,6 +137,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     staleTime: 5 * 60 * 1000, // cache for 5 minutes — fields don't change often
   });
 
+  // Registered named lookup tables (for autocomplete of the Lookup Table Name)
+  const { data: lookupTables = [] } = useQuery({
+    queryKey: ["lookup-tables"],
+    queryFn: () => mappingsApi.listLookupTables(),
+  });
+
   // Kontracts fields
   const { data: targetFields = [], isLoading: targetLoading } = useQuery<KontractsField[]>({
     queryKey: ["kontracts-fields", kontractsEndpoint, kontractsMethod, targetConnId],
@@ -419,12 +425,21 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                 <Label className="text-xs">Lookup Table Name</Label>
                 <Input
                   className="w-[240px]"
+                  list="lookup-tables-list"
                   value={lookupTableName}
                   onChange={(e) => setLookupTableName(e.target.value)}
-                  placeholder="e.g. lease_mappings"
+                  placeholder="pick or type a name"
                 />
+                <datalist id="lookup-tables-list">
+                  {lookupTables.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.entry_count} {t.entry_count === 1 ? "entry" : "entries"}
+                    </option>
+                  ))}
+                </datalist>
                 <p className="text-[10px] text-muted-foreground">
                   Names the table this mapping writes created IDs into, so later mappings can look them up.
+                  Registered on save and made available to other mappings.
                 </p>
               </div>
               <div className="space-y-1">

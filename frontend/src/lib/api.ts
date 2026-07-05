@@ -20,6 +20,7 @@ import type {
   TririgaField,
   KontractsEndpoint,
   KontractsField,
+  LookupTable,
 } from "@/types";
 
 const BASE_URL =
@@ -247,6 +248,17 @@ export const mappingsApi = {
   },
   getVersions: async (id: number): Promise<MappingVersion[]> => {
     const r = await http.get<MappingVersion[]>(`/mappings/${id}/versions`);
+    return r.data;
+  },
+  listLookupTables: async (): Promise<LookupTable[]> => {
+    const r = await http.get<LookupTable[]>("/mappings/lookup-tables");
+    return r.data;
+  },
+  createLookupTable: async (name: string, description?: string): Promise<LookupTable> => {
+    const r = await http.post<LookupTable>("/mappings/lookup-tables", {
+      name,
+      description: description || null,
+    });
     return r.data;
   },
   export: async (id: number): Promise<Blob> => {

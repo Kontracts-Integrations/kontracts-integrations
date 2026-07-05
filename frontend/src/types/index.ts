@@ -87,6 +87,12 @@ export interface SourceFilter {
   value?: string | null;
 }
 
+export interface LookupTable {
+  name: string;
+  description?: string | null;
+  entry_count: number;
+}
+
 export interface MappingVersion {
   id: number;
   template_id: number;

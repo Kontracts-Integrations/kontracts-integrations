@@ -5,13 +5,15 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.connection import Connection
+from app.models.id_mapping import IdMapping
+from app.models.lookup_table import LookupTable
 from app.models.mapping import MappingTemplate, MappingVersion
 from app.schemas.mapping import (
     FieldMapping,
@@ -29,8 +31,35 @@ class MappingPreviewRequest(BaseModel):
     records: List[Dict[str, Any]]
     field_mappings: Optional[List[FieldMapping]] = None
 
+
+class LookupTableCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class LookupTableResponse(BaseModel):
+    name: str
+    description: Optional[str] = None
+    entry_count: int = 0
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _ensure_lookup_table(
+    db: AsyncSession, name: Optional[str], description: Optional[str] = None
+) -> None:
+    """Register a named lookup table (bucket) if it isn't already. Idempotent."""
+    name = (name or "").strip()
+    if not name:
+        return
+    existing = await db.execute(select(LookupTable).where(LookupTable.name == name))
+    row = existing.scalar_one_or_none()
+    if row is None:
+        db.add(LookupTable(name=name, description=description))
+        await db.flush()
+    elif description and not row.description:
+        row.description = description
 
 
 def _versions_list(template: MappingTemplate) -> list:
@@ -130,6 +159,46 @@ async def list_mappings(
     return [_build_response_with_version(t, current_versions.get(t.id)) for t in templates]
 
 
+# NOTE: declared before "/{mapping_id}" so the literal path wins over the int param.
+@router.get("/lookup-tables", response_model=List[LookupTableResponse])
+async def list_lookup_tables(db: AsyncSession = Depends(get_db)):
+    """List named lookup tables available for mappings to write to / read from.
+
+    Unions the registry (names declared by mappings) with any bucket names that
+    already have entries, so nothing is missed.
+    """
+    reg_result = await db.execute(select(LookupTable).order_by(LookupTable.name))
+    registry = {r.name: r.description for r in reg_result.scalars().all()}
+
+    count_result = await db.execute(
+        select(IdMapping.table_name, func.count(IdMapping.id)).group_by(IdMapping.table_name)
+    )
+    counts: Dict[str, int] = {row[0]: row[1] for row in count_result.fetchall()}
+
+    names = sorted(set(registry) | set(counts))
+    return [
+        LookupTableResponse(
+            name=n, description=registry.get(n), entry_count=counts.get(n, 0)
+        )
+        for n in names
+    ]
+
+
+@router.post(
+    "/lookup-tables", response_model=LookupTableResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_lookup_table(
+    payload: LookupTableCreate, db: AsyncSession = Depends(get_db)
+):
+    """Register a named lookup table up front, so mappings can select it."""
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Lookup table name is required")
+    await _ensure_lookup_table(db, name, payload.description)
+    await db.commit()
+    return LookupTableResponse(name=name, description=payload.description, entry_count=0)
+
+
 @router.get("/{mapping_id}", response_model=MappingTemplateResponse)
 async def get_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -176,6 +245,7 @@ async def create_mapping(
     )
     db.add(version)
     await db.flush()
+    await _ensure_lookup_table(db, template.lookup_table_name)
     await db.refresh(template)  # populate server-generated timestamps
     await db.refresh(version)   # populate server-generated id / created_at
     return _build_response_with_version(template, version)
@@ -217,6 +287,7 @@ async def update_mapping(
         template.kontracts_method = payload.kontracts_method
     if "lookup_table_name" in fields:
         template.lookup_table_name = payload.lookup_table_name
+        await _ensure_lookup_table(db, payload.lookup_table_name)
     if "update_existing" in fields and payload.update_existing is not None:
         template.update_existing = payload.update_existing
     if "lookup_key_fields" in fields and payload.lookup_key_fields is not None:
@@ -407,6 +478,7 @@ async def import_mapping(
     )
     db.add(version)
     await db.flush()
+    await _ensure_lookup_table(db, template.lookup_table_name)
     await db.refresh(template)
     await db.refresh(version)
     return _build_response_with_version(template, version)
