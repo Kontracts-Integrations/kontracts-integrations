@@ -1130,7 +1130,8 @@ class SyncService:
             extra=extra,
         )
         self.db.add(entry)
-        await self.db.flush()
+        # No per-entry flush: the session (autoflush=False) persists buffered log
+        # rows at the next batch commit, avoiding a DB round-trip per log line.
 
         # Also emit to Python logging
         python_level = {

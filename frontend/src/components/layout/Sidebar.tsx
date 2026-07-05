@@ -8,6 +8,7 @@ import {
   FileCode,
   Play,
   FileText,
+  Archive,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,11 @@ const navItems = [
     label: "Logs",
     href: "/logs",
     icon: FileText,
+  },
+  {
+    label: "Export / Import",
+    href: "/export",
+    icon: Archive,
   },
 ];
 

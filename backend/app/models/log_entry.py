@@ -21,6 +21,9 @@ class LogEntry(Base):
     __table_args__ = (
         Index("ix_log_entries_created_at", "created_at"),
         Index("ix_log_entries_level", "level"),
+        # Logs are almost always filtered by run (run detail, per-run stats);
+        # the FK does not create an index on Postgres, so add one explicitly.
+        Index("ix_log_entries_run_id", "run_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

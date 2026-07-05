@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update as sql_update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -49,17 +50,17 @@ router = APIRouter()
 async def _ensure_lookup_table(
     db: AsyncSession, name: Optional[str], description: Optional[str] = None
 ) -> None:
-    """Register a named lookup table (bucket) if it isn't already. Idempotent."""
+    """Register a named lookup table (bucket) if it isn't already. Idempotent and
+    race-safe (atomic upsert on the unique name)."""
     name = (name or "").strip()
     if not name:
         return
-    existing = await db.execute(select(LookupTable).where(LookupTable.name == name))
-    row = existing.scalar_one_or_none()
-    if row is None:
-        db.add(LookupTable(name=name, description=description))
-        await db.flush()
-    elif description and not row.description:
-        row.description = description
+    stmt = (
+        pg_insert(LookupTable)
+        .values(name=name, description=description)
+        .on_conflict_do_nothing(index_elements=["name"])
+    )
+    await db.execute(stmt)
 
 
 def _versions_list(template: MappingTemplate) -> list:
@@ -197,6 +198,43 @@ async def create_lookup_table(
     await _ensure_lookup_table(db, name, payload.description)
     await db.commit()
     return LookupTableResponse(name=name, description=payload.description, entry_count=0)
+
+
+# NOTE: declared before "/{mapping_id}" so the literal path wins over the int param.
+@router.get("/export-all")
+async def export_all_mappings(db: AsyncSession = Depends(get_db)):
+    """Export every mapping template (config + current field mappings) as one JSON file."""
+    result = await db.execute(
+        select(MappingTemplate).order_by(MappingTemplate.name)
+    )
+    templates = result.scalars().all()
+
+    current_by_template: Dict[int, Any] = {}
+    if templates:
+        cv_result = await db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.template_id.in_([t.id for t in templates]))
+            .where(MappingVersion.is_current.is_(True))
+            .order_by(MappingVersion.id.desc())
+        )
+        for v in cv_result.scalars().all():
+            current_by_template.setdefault(v.template_id, v)
+
+    mappings = []
+    for t in templates:
+        cv = current_by_template.get(t.id)
+        field_mappings = cv.field_mappings.get("mappings", []) if cv else []
+        mappings.append(_build_export(t, field_mappings)["template"])
+
+    export = {
+        "kontracts_mappings_export": EXPORT_FORMAT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "mappings": mappings,
+    }
+    return JSONResponse(
+        content=export,
+        headers={"Content-Disposition": 'attachment; filename="mapping-templates.json"'},
+    )
 
 
 @router.get("/{mapping_id}", response_model=MappingTemplateResponse)

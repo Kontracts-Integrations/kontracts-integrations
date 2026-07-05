@@ -1,9 +1,11 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,12 +22,70 @@ from app.utils.crypto import decrypt_credentials, encrypt_credentials
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+EXPORT_FORMAT_VERSION = "1.0"
+
+# Credential keys treated as secrets and stripped from any export. Matching is
+# case-insensitive and substring-based so variants (e.g. "client_secret",
+# "api_key", "auth_token") are all caught.
+_SECRET_KEY_PATTERNS = ("password", "secret", "token", "api_key", "apikey", "private_key", "passphrase")
+
+
+def _redact_credentials(creds: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """Split credentials into the non-secret fields to export and the names of
+    the secret fields that were stripped."""
+    kept: Dict[str, Any] = {}
+    redacted: List[str] = []
+    for key, value in (creds or {}).items():
+        low = key.lower()
+        if any(p in low for p in _SECRET_KEY_PATTERNS):
+            redacted.append(key)
+        else:
+            kept[key] = value
+    return kept, redacted
+
 
 @router.get("/", response_model=List[ConnectionResponse])
 async def list_connections(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Connection).order_by(Connection.created_at.desc()))
     connections = result.scalars().all()
     return connections
+
+
+# NOTE: declared before "/{connection_id}" so the literal path wins over the int param.
+@router.get("/export")
+async def export_connections(db: AsyncSession = Depends(get_db)):
+    """Export all connections as a portable JSON file, WITHOUT any secret
+    credentials (passwords, client secrets, tokens are stripped)."""
+    result = await db.execute(select(Connection).order_by(Connection.name))
+    connections = result.scalars().all()
+
+    items = []
+    for conn in connections:
+        creds: Dict[str, Any] = {}
+        try:
+            creds = decrypt_credentials(conn.encrypted_credentials) if conn.encrypted_credentials else {}
+        except Exception:
+            creds = {}
+        kept, redacted = _redact_credentials(creds)
+        items.append({
+            "name": conn.name,
+            "connection_type": conn.connection_type.value,
+            "base_url": conn.base_url,
+            "is_active": conn.is_active,
+            "credentials": kept,
+            "redacted_credentials": redacted,
+        })
+
+    export = {
+        "kontracts_connections_export": EXPORT_FORMAT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "note": "Secrets (passwords/client secrets/tokens) are intentionally omitted; re-enter them on import.",
+        "connections": items,
+    }
+    return JSONResponse(
+        content=export,
+        headers={"Content-Disposition": 'attachment; filename="connections.json"'},
+    )
 
 
 @router.get("/{connection_id}", response_model=ConnectionResponse)
