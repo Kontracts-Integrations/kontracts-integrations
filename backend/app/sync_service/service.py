@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.mapping_engine.filters import _resolve as _resolve_source_field
-from app.models.lease_mapping import DEFAULT_LOOKUP_TABLE, LeaseMapping
+from app.models.id_mapping import DEFAULT_LOOKUP_TABLE, IdMapping
+from app.models.lookup_table import LookupTable
 from app.models.log_entry import LogEntry, LogLevel
 from app.models.mapping import MappingTemplate, MappingVersion
 from app.models.record_sync_state import RecordSyncState
@@ -181,15 +182,20 @@ class SyncService:
         # produced kontracts_id (so later mappings can resolve it by business key).
         lookup_key_fields = list(template.lookup_key_fields or [])
 
+        # Register the named lookup table this mapping writes to (if any) so it is
+        # discoverable by other mappings even before this run populates entries.
+        if should_write_lookup:
+            await self._ensure_lookup_table(write_table)
+
         # Pre-load all id mappings for deduplication and lookup transforms,
         # partitioned by their named lookup table.
         existing_result = await self.db.execute(
             select(
-                LeaseMapping.table_name,
-                LeaseMapping.tririga_record_id,
-                LeaseMapping.tririga_lease_id,
-                LeaseMapping.kontracts_id,
-                LeaseMapping.lookup_keys,
+                IdMapping.table_name,
+                IdMapping.source_record_id,
+                IdMapping.source_key,
+                IdMapping.kontracts_id,
+                IdMapping.lookup_keys,
             )
         )
         lease_rows = existing_result.fetchall()
@@ -230,10 +236,13 @@ class SyncService:
             for key in (row[4] or []):
                 if key:
                     table[str(key)] = row[3]
+        default_bucket = lookup_tables.get(DEFAULT_LOOKUP_TABLE, {})
         engine_context = {
             "lookup_tables": lookup_tables,
-            # Backward-compat: the default table under its legacy context key.
-            "lease_mappings": lookup_tables.get(DEFAULT_LOOKUP_TABLE, {}),
+            # Backward-compat aliases for the default bucket: legacy configs
+            # referenced it as "lease_mappings"; the current default is "default".
+            "default": default_bucket,
+            "lease_mappings": lookup_tables.get("lease_mappings", default_bucket),
         }
 
         # Existing IDs from this mapping's lookup table, used to update previously
@@ -537,10 +546,10 @@ class SyncService:
                                 tririga_record_id = record_id
 
                                 if should_write_lookup:
-                                    self.db.add(LeaseMapping(
+                                    self.db.add(IdMapping(
                                         table_name=write_table,
-                                        tririga_lease_id=tririga_lease_id,
-                                        tririga_record_id=tririga_record_id,
+                                        source_key=tririga_lease_id,
+                                        source_record_id=tririga_record_id,
                                         kontracts_id=kontracts_id,
                                         lookup_keys=_extract_lookup_keys(source_record, lookup_key_fields) or None,
                                     ))
@@ -837,10 +846,10 @@ class SyncService:
 
                         # New lookup rows are only written for creates (updates reuse the id).
                         if should_write_lookup and action == "create":
-                            self.db.add(LeaseMapping(
+                            self.db.add(IdMapping(
                                 table_name=write_table,
-                                tririga_lease_id=tririga_lease_id,
-                                tririga_record_id=tririga_record_id,
+                                source_key=tririga_lease_id,
+                                source_record_id=tririga_record_id,
                                 kontracts_id=kontracts_id,
                                 lookup_keys=_extract_lookup_keys(source_record, lookup_key_fields) or None,
                             ))
@@ -1045,6 +1054,18 @@ class SyncService:
         if kontracts_id:
             return "update", kontracts_id, new_hash
         return "create", None, new_hash
+
+    async def _ensure_lookup_table(self, name: str) -> None:
+        """Register a named lookup table (bucket) if it isn't already, so other
+        mappings can discover it. Idempotent."""
+        if not name:
+            return
+        existing = await self.db.execute(
+            select(LookupTable.id).where(LookupTable.name == name)
+        )
+        if existing.scalar_one_or_none() is None:
+            self.db.add(LookupTable(name=name))
+            await self.db.flush()
 
     async def _record_sync_state(
         self,

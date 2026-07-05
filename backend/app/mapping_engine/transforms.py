@@ -304,13 +304,14 @@ def _resolve_lookup_table(name: str, context: Dict) -> Dict[str, Any]:
     Resolve a named runtime lookup table (source_id -> kontracts_id) from context.
 
     Named tables populated by prior mappings live under context["lookup_tables"].
-    "lease_mappings" also resolves via its legacy top-level context key.
+    The default bucket also resolves via "default" / legacy "lease_mappings" keys.
     """
     tables = context.get("lookup_tables", {})
     if name in tables:
         return tables[name]
-    if name == "lease_mappings":
-        return context.get("lease_mappings", {})
+    # Default-bucket aliases: "default" (current) and "lease_mappings" (legacy).
+    if name in ("default", "lease_mappings"):
+        return context.get(name) or context.get("default", {})
     return {}
 
 

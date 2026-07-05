@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { mappingsApi } from "@/lib/api";
 import type { TransformType } from "@/types";
 
 interface Props {
@@ -13,6 +15,14 @@ interface Props {
 
 export function TransformEditor({ transformType, config, onChange }: Props) {
   const [local, setLocal] = useState<Record<string, unknown>>(config);
+
+  // Registered named lookup tables — used by the lookup_table / lease_lookup editors.
+  const needsLookupTables = transformType === "lookup_table" || transformType === "lease_lookup";
+  const { data: lookupTables = [] } = useQuery({
+    queryKey: ["lookup-tables"],
+    queryFn: () => mappingsApi.listLookupTables(),
+    enabled: needsLookupTables,
+  });
 
   useEffect(() => {
     setLocal(config);
@@ -155,7 +165,7 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
   }
 
   if (transformType === "lookup_table") {
-    const isDynamic = local.dynamic_source === "lease_mappings";
+    const isDynamic = !!local.dynamic_source;
     const tableStr = local.table ? JSON.stringify(local.table, null, 2) : "{}";
     return (
       <div className="space-y-3">
@@ -172,18 +182,34 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
             <button
               type="button"
               className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${isDynamic ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background text-muted-foreground hover:text-foreground"}`}
-              onClick={() => update("dynamic_source", "lease_mappings")}
+              onClick={() => update("dynamic_source", (local.dynamic_source as string) || "default")}
             >
-              Lease Mappings (DB)
+              Lookup Table (DB)
             </button>
           </div>
         </div>
 
         {isDynamic ? (
-          <p className="text-xs text-muted-foreground">
-            Looks up the value in the <strong>lease_mappings</strong> table at runtime.
-            Use <code>triRecordIdSY</code> as the source field to resolve the Kontracts ID.
-          </p>
+          <div className="space-y-1">
+            <Label className="text-xs">Lookup Table</Label>
+            <select
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              value={String(local.dynamic_source ?? "default")}
+              onChange={(e) => update("dynamic_source", e.target.value)}
+            >
+              {!lookupTables.some((t) => t.name === local.dynamic_source) && (
+                <option value={String(local.dynamic_source)}>{String(local.dynamic_source)}</option>
+              )}
+              {lookupTables.map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.name} ({t.entry_count})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-muted-foreground">
+              Resolves the Kontracts ID from the selected lookup table at runtime, matching the source field value against the keys a prior mapping wrote.
+            </p>
+          </div>
         ) : (
           <div className="space-y-1">
             <Label className="text-xs">Lookup Table (JSON)</Label>
@@ -242,10 +268,28 @@ export function TransformEditor({ transformType, config, onChange }: Props) {
     return (
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground">
-          Looks up the Kontracts ID from the <strong>lease_mappings</strong> table using
-          the source field value as the TRIRIGA record ID (<code>triRecordIdSY</code>).
-          No configuration needed — the lookup table is loaded automatically at runtime.
+          Looks up the Kontracts ID from a lookup table using the source field value
+          as the record key. Pick the table a prior mapping writes to.
         </p>
+        <div className="space-y-1">
+          <Label className="text-xs">Lookup Table</Label>
+          <select
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            value={String(local.source_table ?? "default")}
+            onChange={(e) => update("source_table", e.target.value)}
+          >
+            {!lookupTables.some((t) => t.name === (local.source_table ?? "default")) && (
+              <option value={String(local.source_table ?? "default")}>
+                {String(local.source_table ?? "default")}
+              </option>
+            )}
+            {lookupTables.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name} ({t.entry_count})
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="space-y-1">
           <Label className="text-xs">Default (if no match found)</Label>
           <Input
