@@ -511,7 +511,7 @@ class SyncService:
 
             # 2. Push all valid (create) payloads to Kontracts in chunked bulk requests!
             if valid_records:
-                bulk_batch_size = 1000
+                bulk_batch_size = template.bulk_batch_size or 1000
                 await self._log(
                     run_id,
                     LogLevel.info,

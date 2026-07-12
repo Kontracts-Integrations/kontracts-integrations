@@ -116,6 +116,7 @@ export interface MappingTemplate {
   kontracts_method: string | null;
   lookup_table_name: string | null;
   update_existing: boolean;
+  bulk_batch_size: number;
   lookup_key_fields: string[];
   source_filters: SourceFilter[];
   filter_match: string;
@@ -141,6 +142,7 @@ export interface MappingTemplateCreate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  bulk_batch_size?: number;
   lookup_key_fields?: string[];
   source_filters?: SourceFilter[];
   filter_match?: string;
@@ -163,6 +165,7 @@ export interface MappingTemplateUpdate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  bulk_batch_size?: number;
   lookup_key_fields?: string[];
   source_filters?: SourceFilter[];
   filter_match?: string;

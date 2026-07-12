@@ -47,6 +47,10 @@ class MappingTemplate(Base):
     # changed (PUT to {endpoint}/{kontracts_id}) instead of skipping them.
     update_existing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Records per request when pushing to a bulk endpoint. Larger = fewer requests
+    # but bigger payloads. Only used for bulk endpoints; defaults to 1000.
+    bulk_batch_size: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000", nullable=False)
+
     # Source-record filters: list of {field, operator, value}. Only records that
     # match are mapped/pushed. filter_match is "all" (AND) or "any" (OR).
     source_filters: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(

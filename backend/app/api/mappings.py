@@ -104,6 +104,7 @@ def _build_response_with_version(
         kontracts_method=template.kontracts_method,
         lookup_table_name=template.lookup_table_name,
         update_existing=template.update_existing,
+        bulk_batch_size=template.bulk_batch_size or 1000,
         lookup_key_fields=template.lookup_key_fields or [],
         source_filters=template.source_filters or [],
         filter_match=template.filter_match or "all",
@@ -267,6 +268,7 @@ async def create_mapping(
         kontracts_method=payload.kontracts_method or "POST",
         lookup_table_name=payload.lookup_table_name,
         update_existing=payload.update_existing,
+        bulk_batch_size=payload.bulk_batch_size,
         lookup_key_fields=payload.lookup_key_fields,
         source_filters=[f.model_dump() for f in payload.source_filters],
         filter_match=payload.filter_match,
@@ -328,6 +330,8 @@ async def update_mapping(
         await _ensure_lookup_table(db, payload.lookup_table_name)
     if "update_existing" in fields and payload.update_existing is not None:
         template.update_existing = payload.update_existing
+    if "bulk_batch_size" in fields and payload.bulk_batch_size is not None:
+        template.bulk_batch_size = payload.bulk_batch_size
     if "lookup_key_fields" in fields and payload.lookup_key_fields is not None:
         template.lookup_key_fields = payload.lookup_key_fields
     if "source_filters" in fields and payload.source_filters is not None:
@@ -421,6 +425,7 @@ def _build_export(template: MappingTemplate, field_mappings: list) -> Dict[str, 
             "kontracts_method": template.kontracts_method,
             "lookup_table_name": template.lookup_table_name,
             "update_existing": template.update_existing,
+            "bulk_batch_size": template.bulk_batch_size or 1000,
             "lookup_key_fields": template.lookup_key_fields or [],
             "source_filters": template.source_filters or [],
             "filter_match": template.filter_match or "all",
@@ -496,6 +501,7 @@ async def import_mapping(
         kontracts_method=tpl.kontracts_method or "POST",
         lookup_table_name=tpl.lookup_table_name,
         update_existing=tpl.update_existing,
+        bulk_batch_size=tpl.bulk_batch_size,
         lookup_key_fields=tpl.lookup_key_fields,
         source_filters=[f.model_dump() for f in tpl.source_filters],
         filter_match=tpl.filter_match,
