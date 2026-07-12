@@ -49,6 +49,7 @@ interface Props {
       lookup_table_name?: string | null;
       lookup_key_fields?: string[];
       update_existing?: boolean;
+      bulk_batch_size?: number;
       source_filters?: SourceFilter[];
       filter_match?: string;
       field_mappings: FieldMapping[];
@@ -76,6 +77,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   const [lookupKeyFields, setLookupKeyFields] = useState<string[]>(template.lookup_key_fields ?? []);
   const [lookupKeyOpen, setLookupKeyOpen] = useState(false);
   const [updateExisting, setUpdateExisting] = useState(template.update_existing ?? false);
+  const [bulkBatchSize, setBulkBatchSize] = useState(template.bulk_batch_size ?? 1000);
   const [sourceFilters, setSourceFilters] = useState<SourceFilter[]>(template.source_filters ?? []);
   const [filterMatch, setFilterMatch] = useState(template.filter_match ?? "all");
   const [fetchAssociatedObjects, setFetchAssociatedObjects] = useState(template.fetch_associated ?? false);
@@ -107,6 +109,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     setLookupTableName(template.lookup_table_name ?? "");
     setLookupKeyFields(template.lookup_key_fields ?? []);
     setUpdateExisting(template.update_existing ?? false);
+    setBulkBatchSize(template.bulk_batch_size ?? 1000);
     setSourceFilters(template.source_filters ?? []);
     setFilterMatch(template.filter_match ?? "all");
     setSourceConnId(template.source_connection_id ?? undefined);
@@ -246,7 +249,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   };
 
   const addFilter = () => {
-    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "" }]);
+    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "", use_associated: false }]);
   };
   const updateFilter = (index: number, patch: Partial<SourceFilter>) => {
     setSourceFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
@@ -326,6 +329,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
     lookup_table_name: lookupTableName.trim() || null,
     lookup_key_fields: lookupKeyFields,
     update_existing: updateExisting,
+    bulk_batch_size: bulkBatchSize,
     source_filters: sourceFilters.filter((f) => f.field),
     filter_match: filterMatch,
     field_mappings: mappings,
@@ -359,11 +363,12 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/* Header settings */}
-      <div className="rounded-lg border bg-card px-4 py-2.5">
+      {/* Header settings — bounded so a long Details form scrolls instead of
+          pushing the tabs/field mappings off screen. */}
+      <div className="max-h-[48vh] overflow-y-auto rounded-lg border bg-card px-4 py-2.5">
         {isEditing ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between border-b pb-2">
+            <div className="sticky top-0 z-10 -mx-4 -mt-2.5 flex items-center justify-between border-b bg-card px-4 pb-2 pt-2.5">
               <h2 className="text-sm font-semibold text-muted-foreground">Details</h2>
               <Button size="sm" onClick={handleDetailsSave} disabled={saving}>
                 {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
@@ -458,6 +463,24 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
                 </p>
               </div>
             </div>
+
+            {/* Bulk publish size — only relevant for bulk endpoints */}
+            {kontractsEndpoint.toLowerCase().includes("bulk") && (
+              <div className="space-y-1">
+                <Label className="text-xs">Bulk Publish Size</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  className="h-8 w-[240px] text-xs"
+                  value={bulkBatchSize}
+                  onChange={(e) => setBulkBatchSize(Math.max(1, Math.min(10000, Number(e.target.value) || 1)))}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Records sent per request to the bulk endpoint (default 1000). Larger = fewer, bigger requests.
+                </p>
+              </div>
+            )}
 
             {/* Lookup Key Fields — source fields indexed for later target-id lookups */}
             <div className="space-y-1 border-l-4 border-l-amber-400 pl-3 rounded-sm">
@@ -603,17 +626,37 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
 
               {sourceFilters.map((flt, i) => {
                 const opMeta = FILTER_OPERATORS.find((o) => o.value === flt.operator);
+                const filterFields = flt.use_associated ? assocFields : sourceFields;
                 return (
                   <div key={i} className="flex items-center gap-2">
+                    {fetchAssociatedObjects && (
+                      <button
+                        type="button"
+                        onClick={() => updateFilter(i, { use_associated: !flt.use_associated, field: "" })}
+                        className={cn(
+                          "flex-shrink-0 rounded px-1.5 py-1 text-[11px] font-medium transition-colors",
+                          flt.use_associated
+                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        )}
+                        title="Filter on the associated BO record instead of the main record"
+                      >
+                        assoc
+                      </button>
+                    )}
                     <SearchableSelect
-                      options={sourceFields.map((f) => ({
+                      options={filterFields.map((f) => ({
                         value: `${f.section || "General"}||${f.name}`,
                         label: f.label && f.label !== f.name ? `${f.name} (${f.label})` : f.name,
                       }))}
                       value={flt.field}
                       onValueChange={(v) => updateFilter(i, { field: v })}
-                      disabled={!sourceObject || sourceLoading}
-                      placeholder={!sourceObject ? "Select a business object first..." : "Select field..."}
+                      disabled={flt.use_associated ? (!assocObject || assocFieldsLoading) : (!sourceObject || sourceLoading)}
+                      placeholder={
+                        flt.use_associated
+                          ? (!assocObject ? "Select an associated BO first..." : "Select associated field...")
+                          : (!sourceObject ? "Select a business object first..." : "Select field...")
+                      }
                       searchPlaceholder="Search fields..."
                       widthClass="w-[260px]"
                     />
@@ -646,6 +689,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               </Button>
               <p className="text-[10px] text-muted-foreground">
                 Only source records matching these conditions are synced. String comparisons are case-insensitive.
+                {fetchAssociatedObjects && " Toggle “assoc” to filter on the associated BO’s fields (joined from the association at query time). Associated filters are skipped in preview."}
               </p>
             </div>
 
@@ -795,8 +839,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
           </div>
         </TabsContent>
 
-        <TabsContent value="fields" className="mt-4 flex-1 overflow-hidden">
-          <div className="grid h-[500px] grid-cols-2 gap-4">
+        <TabsContent value="fields" className="mt-4 min-h-0 flex-1 overflow-hidden">
+          {/* h-full + grid-rows-1 (minmax(0,1fr)) bound the row to the tab area so
+              each panel's field list scrolls on its own instead of growing past it. */}
+          <div className="grid h-full min-h-0 grid-cols-2 grid-rows-1 gap-4">
             <FieldPanel
               title="Source Fields"
               fields={sourceFields}

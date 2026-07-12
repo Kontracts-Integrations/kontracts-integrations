@@ -40,6 +40,10 @@ class SourceFilter(BaseModel):
     value: Optional[str] = Field(
         default=None, description="Comparison value (ignored for is_empty/is_not_empty)"
     )
+    use_associated: bool = Field(
+        default=False,
+        description="Resolve the field against the associated BO record instead of the main record",
+    )
 
 
 class MappingTemplateCreate(BaseModel):
@@ -60,6 +64,12 @@ class MappingTemplateCreate(BaseModel):
     update_existing: bool = Field(
         default=False,
         description="Update already-synced records whose payload changed instead of skipping",
+    )
+    bulk_batch_size: int = Field(
+        default=1000,
+        ge=1,
+        le=10000,
+        description="Records per request when pushing to a bulk endpoint",
     )
     lookup_key_fields: List[str] = Field(
         default_factory=list,
@@ -89,6 +99,7 @@ class MappingTemplateUpdate(BaseModel):
     kontracts_method: Optional[str] = None
     lookup_table_name: Optional[str] = Field(default=None, max_length=255)
     update_existing: Optional[bool] = None
+    bulk_batch_size: Optional[int] = Field(default=None, ge=1, le=10000)
     lookup_key_fields: Optional[List[str]] = None
     source_filters: Optional[List[SourceFilter]] = None
     filter_match: Optional[str] = Field(default=None, pattern="^(all|any)$")
@@ -136,6 +147,7 @@ class MappingTemplateResponse(BaseModel):
     kontracts_method: Optional[str]
     lookup_table_name: Optional[str] = None
     update_existing: bool = False
+    bulk_batch_size: int = 1000
     lookup_key_fields: List[str] = Field(default_factory=list)
     source_filters: List[SourceFilter] = Field(default_factory=list)
     filter_match: str = "all"

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update as sql_update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -49,17 +50,17 @@ router = APIRouter()
 async def _ensure_lookup_table(
     db: AsyncSession, name: Optional[str], description: Optional[str] = None
 ) -> None:
-    """Register a named lookup table (bucket) if it isn't already. Idempotent."""
+    """Register a named lookup table (bucket) if it isn't already. Idempotent and
+    race-safe (atomic upsert on the unique name)."""
     name = (name or "").strip()
     if not name:
         return
-    existing = await db.execute(select(LookupTable).where(LookupTable.name == name))
-    row = existing.scalar_one_or_none()
-    if row is None:
-        db.add(LookupTable(name=name, description=description))
-        await db.flush()
-    elif description and not row.description:
-        row.description = description
+    stmt = (
+        pg_insert(LookupTable)
+        .values(name=name, description=description)
+        .on_conflict_do_nothing(index_elements=["name"])
+    )
+    await db.execute(stmt)
 
 
 def _versions_list(template: MappingTemplate) -> list:
@@ -103,6 +104,7 @@ def _build_response_with_version(
         kontracts_method=template.kontracts_method,
         lookup_table_name=template.lookup_table_name,
         update_existing=template.update_existing,
+        bulk_batch_size=template.bulk_batch_size or 1000,
         lookup_key_fields=template.lookup_key_fields or [],
         source_filters=template.source_filters or [],
         filter_match=template.filter_match or "all",
@@ -199,6 +201,43 @@ async def create_lookup_table(
     return LookupTableResponse(name=name, description=payload.description, entry_count=0)
 
 
+# NOTE: declared before "/{mapping_id}" so the literal path wins over the int param.
+@router.get("/export-all")
+async def export_all_mappings(db: AsyncSession = Depends(get_db)):
+    """Export every mapping template (config + current field mappings) as one JSON file."""
+    result = await db.execute(
+        select(MappingTemplate).order_by(MappingTemplate.name)
+    )
+    templates = result.scalars().all()
+
+    current_by_template: Dict[int, Any] = {}
+    if templates:
+        cv_result = await db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.template_id.in_([t.id for t in templates]))
+            .where(MappingVersion.is_current.is_(True))
+            .order_by(MappingVersion.id.desc())
+        )
+        for v in cv_result.scalars().all():
+            current_by_template.setdefault(v.template_id, v)
+
+    mappings = []
+    for t in templates:
+        cv = current_by_template.get(t.id)
+        field_mappings = cv.field_mappings.get("mappings", []) if cv else []
+        mappings.append(_build_export(t, field_mappings)["template"])
+
+    export = {
+        "kontracts_mappings_export": EXPORT_FORMAT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "mappings": mappings,
+    }
+    return JSONResponse(
+        content=export,
+        headers={"Content-Disposition": 'attachment; filename="mapping-templates.json"'},
+    )
+
+
 @router.get("/{mapping_id}", response_model=MappingTemplateResponse)
 async def get_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -229,6 +268,7 @@ async def create_mapping(
         kontracts_method=payload.kontracts_method or "POST",
         lookup_table_name=payload.lookup_table_name,
         update_existing=payload.update_existing,
+        bulk_batch_size=payload.bulk_batch_size,
         lookup_key_fields=payload.lookup_key_fields,
         source_filters=[f.model_dump() for f in payload.source_filters],
         filter_match=payload.filter_match,
@@ -290,6 +330,8 @@ async def update_mapping(
         await _ensure_lookup_table(db, payload.lookup_table_name)
     if "update_existing" in fields and payload.update_existing is not None:
         template.update_existing = payload.update_existing
+    if "bulk_batch_size" in fields and payload.bulk_batch_size is not None:
+        template.bulk_batch_size = payload.bulk_batch_size
     if "lookup_key_fields" in fields and payload.lookup_key_fields is not None:
         template.lookup_key_fields = payload.lookup_key_fields
     if "source_filters" in fields and payload.source_filters is not None:
@@ -383,6 +425,7 @@ def _build_export(template: MappingTemplate, field_mappings: list) -> Dict[str, 
             "kontracts_method": template.kontracts_method,
             "lookup_table_name": template.lookup_table_name,
             "update_existing": template.update_existing,
+            "bulk_batch_size": template.bulk_batch_size or 1000,
             "lookup_key_fields": template.lookup_key_fields or [],
             "source_filters": template.source_filters or [],
             "filter_match": template.filter_match or "all",
@@ -458,6 +501,7 @@ async def import_mapping(
         kontracts_method=tpl.kontracts_method or "POST",
         lookup_table_name=tpl.lookup_table_name,
         update_existing=tpl.update_existing,
+        bulk_batch_size=tpl.bulk_batch_size,
         lookup_key_fields=tpl.lookup_key_fields,
         source_filters=[f.model_dump() for f in tpl.source_filters],
         filter_match=tpl.filter_match,

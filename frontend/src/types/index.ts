@@ -85,6 +85,7 @@ export interface SourceFilter {
   field: string;
   operator: FilterOperator;
   value?: string | null;
+  use_associated?: boolean;
 }
 
 export interface LookupTable {
@@ -115,6 +116,7 @@ export interface MappingTemplate {
   kontracts_method: string | null;
   lookup_table_name: string | null;
   update_existing: boolean;
+  bulk_batch_size: number;
   lookup_key_fields: string[];
   source_filters: SourceFilter[];
   filter_match: string;
@@ -140,6 +142,7 @@ export interface MappingTemplateCreate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  bulk_batch_size?: number;
   lookup_key_fields?: string[];
   source_filters?: SourceFilter[];
   filter_match?: string;
@@ -162,6 +165,7 @@ export interface MappingTemplateUpdate {
   kontracts_method?: string;
   lookup_table_name?: string | null;
   update_existing?: boolean;
+  bulk_batch_size?: number;
   lookup_key_fields?: string[];
   source_filters?: SourceFilter[];
   filter_match?: string;

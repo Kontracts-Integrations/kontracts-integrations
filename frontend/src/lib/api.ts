@@ -77,6 +77,11 @@ export const connectionsApi = {
   delete: async (id: number): Promise<void> => {
     await http.delete(`/connections/${id}`);
   },
+  export: async (): Promise<Blob> => {
+    // Authenticated blob download; secrets (passwords/tokens) are stripped server-side.
+    const r = await http.get("/connections/export", { responseType: "blob" });
+    return r.data as Blob;
+  },
   test: async (id: number): Promise<ConnectionTestResult> => {
     const r = await http.post<ConnectionTestResult>(`/connections/${id}/test`);
     return r.data;
@@ -264,6 +269,10 @@ export const mappingsApi = {
   export: async (id: number): Promise<Blob> => {
     // Authenticated blob download (a plain window.open can't attach the Bearer token).
     const r = await http.get(`/mappings/${id}/export`, { responseType: "blob" });
+    return r.data as Blob;
+  },
+  exportAll: async (): Promise<Blob> => {
+    const r = await http.get("/mappings/export-all", { responseType: "blob" });
     return r.data as Blob;
   },
   import: async (

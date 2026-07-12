@@ -141,6 +141,7 @@ def normalize_dynamic_query_response(obj: Any) -> List[Dict[str, Any]]:
                     "triRecordId": helper.get("recordId"),
                     "triBoId": helper.get("boId"),
                 }
+                associated: Dict[str, Any] = {}
                 cols_wrapper = helper.get("queryResponseColumns", {})
                 cols = cols_wrapper.get("QueryResponseColumn", []) if isinstance(cols_wrapper, dict) else []
                 if isinstance(cols, dict):
@@ -149,7 +150,19 @@ def normalize_dynamic_query_response(obj: Any) -> List[Dict[str, Any]]:
                     if isinstance(col, dict):
                         name = col.get("name") or col.get("label")
                         if name:
-                            record[name] = col.get("value")
+                            # Associated-BO fields come back with a section prefixed
+                            # "ASSOCIATED_" — route them into record["Associated"] so
+                            # use_associated mappings/filters resolve real field values.
+                            section = str(col.get("section") or "")
+                            if section.upper().startswith("ASSOCIATED"):
+                                associated[name] = col.get("value")
+                            else:
+                                record[name] = col.get("value")
+                if associated:
+                    record["Associated"] = associated
+                    if helper.get("assocId") is not None:
+                        associated.setdefault("triRecordId", helper.get("assocId"))
+                        associated.setdefault("id", helper.get("assocId"))
                 result.append(record)
             return result
 
