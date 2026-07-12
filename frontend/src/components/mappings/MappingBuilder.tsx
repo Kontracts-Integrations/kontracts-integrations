@@ -246,7 +246,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
   };
 
   const addFilter = () => {
-    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "" }]);
+    setSourceFilters((prev) => [...prev, { field: "", operator: "contains", value: "", use_associated: false }]);
   };
   const updateFilter = (index: number, patch: Partial<SourceFilter>) => {
     setSourceFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
@@ -603,17 +603,37 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
 
               {sourceFilters.map((flt, i) => {
                 const opMeta = FILTER_OPERATORS.find((o) => o.value === flt.operator);
+                const filterFields = flt.use_associated ? assocFields : sourceFields;
                 return (
                   <div key={i} className="flex items-center gap-2">
+                    {fetchAssociatedObjects && (
+                      <button
+                        type="button"
+                        onClick={() => updateFilter(i, { use_associated: !flt.use_associated, field: "" })}
+                        className={cn(
+                          "flex-shrink-0 rounded px-1.5 py-1 text-[11px] font-medium transition-colors",
+                          flt.use_associated
+                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        )}
+                        title="Filter on the associated BO record instead of the main record"
+                      >
+                        assoc
+                      </button>
+                    )}
                     <SearchableSelect
-                      options={sourceFields.map((f) => ({
+                      options={filterFields.map((f) => ({
                         value: `${f.section || "General"}||${f.name}`,
                         label: f.label && f.label !== f.name ? `${f.name} (${f.label})` : f.name,
                       }))}
                       value={flt.field}
                       onValueChange={(v) => updateFilter(i, { field: v })}
-                      disabled={!sourceObject || sourceLoading}
-                      placeholder={!sourceObject ? "Select a business object first..." : "Select field..."}
+                      disabled={flt.use_associated ? (!assocObject || assocFieldsLoading) : (!sourceObject || sourceLoading)}
+                      placeholder={
+                        flt.use_associated
+                          ? (!assocObject ? "Select an associated BO first..." : "Select associated field...")
+                          : (!sourceObject ? "Select a business object first..." : "Select field...")
+                      }
                       searchPlaceholder="Search fields..."
                       widthClass="w-[260px]"
                     />
@@ -646,6 +666,7 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
               </Button>
               <p className="text-[10px] text-muted-foreground">
                 Only source records matching these conditions are synced. String comparisons are case-insensitive.
+                {fetchAssociatedObjects && " Toggle “assoc” to filter on the associated BO’s fields (joined from the association at query time). Associated filters are skipped in preview."}
               </p>
             </div>
 

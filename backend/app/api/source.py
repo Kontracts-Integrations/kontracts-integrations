@@ -146,17 +146,21 @@ async def preview_data(
 ):
     connector = await _get_connector(payload.connection_id, db)
     try:
+        # Associated-BO filters can't be evaluated in preview (association data
+        # isn't fetched here), so they're ignored for the sample.
+        preview_filters = [f for f in (payload.source_filters or []) if not f.get("use_associated")]
+
         # Fields referenced only by filters must also be fetched, else the filter
         # has no value to compare against and drops every record.
         field_names = list(payload.field_names or [])
-        for flt in (payload.source_filters or []):
+        for flt in preview_filters:
             fld = flt.get("field")
             if fld and fld not in field_names:
                 field_names.append(fld)
 
         # When filters are active, fetch a larger sample so matching records
         # aren't missed, then filter and cap to the requested preview size.
-        fetch_count = 200 if payload.source_filters else payload.max_records
+        fetch_count = 200 if preview_filters else payload.max_records
         records = await connector.preview_records(
             object_name=payload.object_name,
             module_name=payload.module_name,
@@ -164,10 +168,10 @@ async def preview_data(
             query_name=payload.query_name,
             max_records=fetch_count,
         )
-        if payload.source_filters:
+        if preview_filters:
             from app.mapping_engine.filters import filter_records
             records = filter_records(
-                records, payload.source_filters, payload.filter_match
+                records, preview_filters, payload.filter_match
             )[: payload.max_records]
         try:
             fields = await connector.get_object_fields(

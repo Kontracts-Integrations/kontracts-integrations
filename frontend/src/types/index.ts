@@ -85,6 +85,7 @@ export interface SourceFilter {
   field: string;
   operator: FilterOperator;
   value?: string | null;
+  use_associated?: boolean;
 }
 
 export interface LookupTable {

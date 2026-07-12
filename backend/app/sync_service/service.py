@@ -99,18 +99,39 @@ class SyncService:
             if fm.get("source_field")
         ]
         # Fields referenced only by filters must also be fetched, otherwise the
-        # filter has no value to compare against and drops every record.
+        # filter has no value to compare against and drops every record. Fields on
+        # the associated BO (use_associated) are collected separately below and
+        # joined into the query, not fetched from the main object.
+        associated_field_names: List[str] = []
         for flt in (template.source_filters or []):
             fld = flt.get("field")
-            if fld and fld not in source_field_names:
+            if not fld:
+                continue
+            if flt.get("use_associated"):
+                if fld not in associated_field_names:
+                    associated_field_names.append(fld)
+            elif fld not in source_field_names:
                 source_field_names.append(fld)
+
+        # Associated fields referenced by mappings (use_associated) are joined too,
+        # so a single runDynamicQuery returns their real values inline.
+        if template.fetch_associated and template.assoc_object:
+            for fm in field_mappings_data:
+                if fm.get("use_associated") and fm.get("source_field"):
+                    if fm["source_field"] not in associated_field_names:
+                        associated_field_names.append(fm["source_field"])
+
+        use_assoc_join = bool(
+            template.fetch_associated and template.assoc_object and associated_field_names
+        )
 
         # Fetch TRIRIGA data via runDynamicQuery
         await self._log(
             run_id,
             LogLevel.info,
             f"Fetching TRIRIGA data: module={template.source_module}, "
-            f"object={template.source_object}, fields={len(source_field_names)}",
+            f"object={template.source_object}, fields={len(source_field_names)}"
+            + (f", associated {template.assoc_object}: {len(associated_field_names)} fields" if use_assoc_join else ""),
             "tririga_client",
         )
 
@@ -121,6 +142,9 @@ class SyncService:
             filter_condition="",
             max_records=1000,
             fetch_all=True,
+            associated_module=(template.assoc_module or "") if use_assoc_join else "",
+            associated_object=(template.assoc_object or "") if use_assoc_join else "",
+            associated_field_names=associated_field_names if use_assoc_join else None,
         )
 
         await self._log(
@@ -132,6 +156,17 @@ class SyncService:
 
         # Apply source-record filters (starts_with / contains / equals / etc.).
         source_filters = template.source_filters or []
+        # If any filter targets the associated BO and the query join wasn't used to
+        # supply that data, fall back to attaching id/name via getAssociatedRecords
+        # before filtering (the join already populates record["Associated"]).
+        needs_assoc_filter = any(f.get("use_associated") for f in source_filters)
+        if needs_assoc_filter and not use_assoc_join and template.fetch_associated and template.assoc_string:
+            await self._enrich_associated(records, tririga_client, template.assoc_string)
+            await self._log(
+                run_id, LogLevel.info,
+                f"Attached associated records to {len(records)} records for filtering",
+                "sync_service",
+            )
         if source_filters:
             from app.mapping_engine.filters import filter_records
             fetched = len(records)
@@ -273,37 +308,11 @@ class SyncService:
             for batch_start in range(0, len(records), batch_size):
                 batch = records[batch_start : batch_start + batch_size]
                 
-                # If fetch_associated is enabled, fetch associated records concurrently for this batch
-                if template.fetch_associated and template.assoc_string:
-                    async def _enrich_record(rec):
-                        rid = str(
-                            rec.get("triRecordId",
-                            rec.get("triRecordIdSY",
-                            rec.get("id",
-                            rec.get("recordId", ""))))
-                        )
-                        if rid:
-                            assocs = await tririga_client.get_associated_records(
-                                record_id=int(rid),
-                                association_name=template.assoc_string,
-                            )
-                            if assocs:
-                                first_assoc = assocs[0]
-                                rec["Associated"] = {
-                                    "triRecordId": str(first_assoc.get("associatedRecordId", "")),
-                                    "triRecordIdSY": str(first_assoc.get("associatedRecordId", "")),
-                                    "triIdTX": first_assoc.get("associatedRecordName", ""),
-                                    "triNameTX": first_assoc.get("associatedRecordName", ""),
-                                    "id": str(first_assoc.get("associatedRecordId", "")),
-                                }
-                            else:
-                                rec["Associated"] = {}
-                        else:
-                            rec["Associated"] = {}
+                # If fetch_associated is enabled, attach associated records for this
+                # batch (records already enriched for filtering are skipped).
+                if template.fetch_associated and template.assoc_string and not use_assoc_join:
+                    await self._enrich_associated(batch, tririga_client, template.assoc_string)
 
-                    enrich_tasks = [_enrich_record(r) for r in batch]
-                    await asyncio.gather(*enrich_tasks)
-                
                 for i, source_record in enumerate(batch):
                     record_id = str(
                         source_record.get("triRecordId",
@@ -627,37 +636,11 @@ class SyncService:
             for batch_start in range(0, len(records), batch_size):
                 batch = records[batch_start : batch_start + batch_size]
                 
-                # If fetch_associated is enabled, fetch associated records concurrently for this batch
-                if template.fetch_associated and template.assoc_string:
-                    async def _enrich_record(rec):
-                        rid = str(
-                            rec.get("triRecordId",
-                            rec.get("triRecordIdSY",
-                            rec.get("id",
-                            rec.get("recordId", ""))))
-                        )
-                        if rid:
-                            assocs = await tririga_client.get_associated_records(
-                                record_id=int(rid),
-                                association_name=template.assoc_string,
-                            )
-                            if assocs:
-                                first_assoc = assocs[0]
-                                rec["Associated"] = {
-                                    "triRecordId": str(first_assoc.get("associatedRecordId", "")),
-                                    "triRecordIdSY": str(first_assoc.get("associatedRecordId", "")),
-                                    "triIdTX": first_assoc.get("associatedRecordName", ""),
-                                    "triNameTX": first_assoc.get("associatedRecordName", ""),
-                                    "id": str(first_assoc.get("associatedRecordId", "")),
-                                }
-                            else:
-                                rec["Associated"] = {}
-                        else:
-                            rec["Associated"] = {}
+                # If fetch_associated is enabled, attach associated records for this
+                # batch (records already enriched for filtering are skipped).
+                if template.fetch_associated and template.assoc_string and not use_assoc_join:
+                    await self._enrich_associated(batch, tririga_client, template.assoc_string)
 
-                    enrich_tasks = [_enrich_record(r) for r in batch]
-                    await asyncio.gather(*enrich_tasks)
-                
                 # 1. Map and validate serially (instantaneous in-memory operations)
                 tasks_to_run = [] # List of tuples: (record_id, source_record, mapped_payload)
                 
@@ -1054,6 +1037,39 @@ class SyncService:
         if kontracts_id:
             return "update", kontracts_id, new_hash
         return "create", None, new_hash
+
+    async def _enrich_associated(self, records, tririga_client, assoc_string: str) -> None:
+        """Attach the associated BO record (id/name) to each record under
+        record["Associated"]. Records already enriched are skipped, so this is
+        safe to call before filtering and again per batch."""
+        async def _one(rec):
+            if rec.get("Associated") is not None:
+                return
+            rid = str(
+                rec.get("triRecordId",
+                rec.get("triRecordIdSY",
+                rec.get("id",
+                rec.get("recordId", ""))))
+            )
+            if not rid.isdigit():
+                rec["Associated"] = {}
+                return
+            assocs = await tririga_client.get_associated_records(
+                record_id=int(rid), association_name=assoc_string
+            )
+            if assocs:
+                fa = assocs[0]
+                rec["Associated"] = {
+                    "triRecordId": str(fa.get("associatedRecordId", "")),
+                    "triRecordIdSY": str(fa.get("associatedRecordId", "")),
+                    "triIdTX": fa.get("associatedRecordName", ""),
+                    "triNameTX": fa.get("associatedRecordName", ""),
+                    "id": str(fa.get("associatedRecordId", "")),
+                }
+            else:
+                rec["Associated"] = {}
+
+        await asyncio.gather(*[_one(r) for r in records])
 
     async def _ensure_lookup_table(self, name: str) -> None:
         """Register a named lookup table (bucket) if it isn't already, so other

@@ -32,11 +32,16 @@ OPERATORS = {
 }
 
 
-def _resolve(record: Dict[str, Any], field: str) -> Any:
+def _resolve(record: Dict[str, Any], field: str, use_associated: bool = False) -> Any:
     if not field:
         return None
     if "||" in field:
         field = field.split("||", 1)[1]
+    # An explicit use_associated flag (or a legacy "Associated." path prefix)
+    # resolves the field against the associated BO record attached to the record.
+    if use_associated:
+        assoc = record.get("Associated", {}) or {}
+        return _get_nested_value(assoc, field)
     if field.startswith("Associated."):
         assoc = record.get("Associated", {}) or {}
         return _get_nested_value(assoc, field.split(".", 1)[1])
@@ -45,7 +50,7 @@ def _resolve(record: Dict[str, Any], field: str) -> Any:
 
 def _match_one(record: Dict[str, Any], flt: Dict[str, Any]) -> bool:
     op = (flt.get("operator") or "equals").lower()
-    value = _resolve(record, flt.get("field", ""))
+    value = _resolve(record, flt.get("field", ""), bool(flt.get("use_associated")))
 
     if op == "is_empty":
         return value is None or str(value).strip() == ""

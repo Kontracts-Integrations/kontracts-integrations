@@ -40,6 +40,10 @@ class SourceFilter(BaseModel):
     value: Optional[str] = Field(
         default=None, description="Comparison value (ignored for is_empty/is_not_empty)"
     )
+    use_associated: bool = Field(
+        default=False,
+        description="Resolve the field against the associated BO record instead of the main record",
+    )
 
 
 class MappingTemplateCreate(BaseModel):

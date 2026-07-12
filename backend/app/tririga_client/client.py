@@ -418,6 +418,9 @@ class TririgaClient:
         filter_condition: str = "",
         max_records: int = 500,
         fetch_all: bool = False,
+        associated_module: str = "",
+        associated_object: str = "",
+        associated_field_names: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch records via runDynamicQuery, optionally paginating through all results
@@ -456,6 +459,21 @@ class TririgaClient:
                     display_labels.append(DisplayLabel(fieldName=clean, label=clean, sectionName=section))
             display_fields = ArrayOfDisplayLabel(DisplayLabel=display_labels) if display_labels else ArrayOfDisplayLabel()
 
+            # Associated BO fields: when an associated object + fields are given,
+            # TRIRIGA joins the association and returns those fields inline (their
+            # columns come back with a section prefixed "ASSOCIATED_").
+            assoc_labels = []
+            for fname in (associated_field_names or []):
+                if "||" in fname:
+                    section, clean = fname.split("||", 1)
+                else:
+                    section, clean = "", fname
+                if clean:
+                    assoc_labels.append(DisplayLabel(fieldName=clean, label=clean, sectionName=section))
+            associated_display_fields = (
+                ArrayOfDisplayLabel(DisplayLabel=assoc_labels) if assoc_labels else ArrayOfDisplayLabel()
+            )
+
             from app.tririga_client.normalizer import extract_dynamic_query_result
 
             # Initial query
@@ -465,11 +483,11 @@ class TririgaClient:
                     moduleName=module_name,
                     objectTypeNames=obj_names,
                     guiNames=gui_names,
-                    associatedModuleName="",
-                    associatedObjectTypeName="",
+                    associatedModuleName=associated_module or "",
+                    associatedObjectTypeName=associated_object or "",
                     projectScope=2,
                     displayFields=display_fields,
-                    associatedDisplayFields=ArrayOfDisplayLabel(),
+                    associatedDisplayFields=associated_display_fields,
                     fieldSortOrders=empty_sort,
                     filters=empty_filter,
                     associationFilters=empty_assoc_filter,
