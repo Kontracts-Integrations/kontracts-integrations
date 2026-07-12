@@ -816,8 +816,10 @@ export function MappingBuilder({ template, onSave, saving, saveRef }: Props) {
           </div>
         </TabsContent>
 
-        <TabsContent value="fields" className="mt-4 flex-1 overflow-hidden">
-          <div className="grid h-[500px] grid-cols-2 gap-4">
+        <TabsContent value="fields" className="mt-4 min-h-0 flex-1 overflow-hidden">
+          {/* h-full + grid-rows-1 (minmax(0,1fr)) bound the row to the tab area so
+              each panel's field list scrolls on its own instead of growing past it. */}
+          <div className="grid h-full min-h-0 grid-cols-2 grid-rows-1 gap-4">
             <FieldPanel
               title="Source Fields"
               fields={sourceFields}

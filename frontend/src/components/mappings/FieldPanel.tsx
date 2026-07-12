@@ -60,7 +60,7 @@ export function FieldPanel({ title, fields, loading, side }: Props) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {loading ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             Loading fields...
