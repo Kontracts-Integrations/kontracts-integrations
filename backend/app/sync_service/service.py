@@ -22,6 +22,23 @@ from app.utils.hashing import payload_hash
 
 logger = logging.getLogger(__name__)
 
+# Max simultaneous outbound requests (and thus open sockets/file descriptors).
+# Kept well under a typical 1024 fd limit so large runs can't exhaust it — each
+# request opens its own httpx client, and unbounded gathers otherwise fire every
+# record at once ("[Errno 24] Too many open files" / "All connection attempts failed").
+MAX_REQUEST_CONCURRENCY = 16
+
+
+async def _gather_bounded(coros, limit: int = MAX_REQUEST_CONCURRENCY):
+    """Run coroutines concurrently but with at most `limit` in flight at once."""
+    sem = asyncio.Semaphore(limit)
+
+    async def _run(coro):
+        async with sem:
+            return await coro
+
+    return await asyncio.gather(*[_run(c) for c in coros])
+
 
 def _extract_lookup_keys(source_record: Dict[str, Any], fields: List[str]) -> List[str]:
     """Resolve each configured source field to a string key value.
@@ -427,6 +444,20 @@ class SyncService:
                             extra={"record_id": record_id},
                         )
 
+                # Throttled progress so a long validation phase shows movement.
+                # Commit at each checkpoint so the log + counts are visible live.
+                done = min(batch_start + batch_size, len(records))
+                if done % 500 < batch_size or done == len(records):
+                    await self._log(
+                        run_id, LogLevel.info,
+                        f"Mapped/validated {done}/{len(records)} records "
+                        f"({len(valid_records)} valid, {failed_count} invalid, {skipped_count} skipped)",
+                        "sync_service",
+                    )
+                    run.failed_count = failed_count
+                    run.skipped_count = skipped_count
+                    await self.db.commit()
+
             # 1b. Upsert partitioning: split validated records into skips (unchanged),
             # updates (changed / previously created), and creates. Only creates go
             # through the bulk endpoint; updates are applied as individual PUTs.
@@ -474,7 +505,7 @@ class SyncService:
                         except Exception as e:
                             return {"status": "failed", "rec": rec, "error": str(e)}
 
-                    for ur in await asyncio.gather(*[_update_one(r) for r in updates]):
+                    for ur in await _gather_bounded([_update_one(r) for r in updates]):
                         rec = ur["rec"]
                         if ur["status"] == "success":
                             kontracts_id = str((ur["result"] or {}).get("id", "") or "") or rec["kontracts_id"]
@@ -507,29 +538,43 @@ class SyncService:
                                 extra={"record_id": rec["record_id"]},
                             )
 
+                    await self.db.commit()  # persist update progress before bulk creates
+                    await self._log(
+                        run_id, LogLevel.info,
+                        f"Update phase done — {len(updates)} PUT updates processed; "
+                        f"{len(creates)} new records queued for bulk create, {skipped_count} skipped",
+                        "sync_service",
+                    )
+
                 valid_records = creates
 
             # 2. Push all valid (create) payloads to Kontracts in chunked bulk requests!
             if valid_records:
                 bulk_batch_size = template.bulk_batch_size or 1000
+                total_chunks = (len(valid_records) + bulk_batch_size - 1) // bulk_batch_size
                 await self._log(
                     run_id,
                     LogLevel.info,
-                    f"Paging through {len(valid_records)} validated records in chunks of {bulk_batch_size} for bulk API push",
+                    f"Bulk publish: {len(valid_records)} records in {total_chunks} "
+                    f"chunk(s) of up to {bulk_batch_size}",
                     "sync_service"
                 )
-                
+
                 for chunk_start in range(0, len(valid_records), bulk_batch_size):
+                    chunk_no = chunk_start // bulk_batch_size + 1
                     chunk_records = valid_records[chunk_start : chunk_start + bulk_batch_size]
                     payloads_array = [rec["mapped_payload"] for rec in chunk_records]
-                    
+                    chunk_success_before = success_count
+                    chunk_failed_before = failed_count
+
                     await self._log(
                         run_id,
                         LogLevel.info,
-                        f"Pushing bulk chunk ({chunk_start + 1} to {chunk_start + len(chunk_records)}) in a single HTTP request",
+                        f"Chunk {chunk_no}/{total_chunks}: pushing {len(chunk_records)} records "
+                        f"(rows {chunk_start + 1}-{chunk_start + len(chunk_records)}) to {template.kontracts_endpoint}",
                         "sync_service"
                     )
-                    
+
                     try:
                         res = await kontracts_client.push_bulk(
                             endpoint=template.kontracts_endpoint or "/api/v1/payments/bulk",
@@ -610,7 +655,7 @@ class SyncService:
                         await self._log(
                             run_id,
                             LogLevel.error,
-                            f"Bulk request chunk push failed: {error_msg}",
+                            f"Chunk {chunk_no}/{total_chunks}: bulk request failed — {error_msg}",
                             "sync_service"
                         )
                         # Mark all chunk records as failed
@@ -624,8 +669,27 @@ class SyncService:
                                 mapped_data=rec["mapped_payload"],
                                 error=error_msg,
                             )
-            
-            # Commit all database records at once
+
+                    # Persist progress after every chunk so the run reports live totals
+                    # instead of only at the end of a long payment run.
+                    run.success_count = success_count
+                    run.failed_count = failed_count
+                    run.skipped_count = skipped_count
+                    await self.db.commit()
+                    processed = success_count + failed_count + skipped_count
+                    total = run.total_records or processed or 1
+                    await self._log(
+                        run_id,
+                        LogLevel.info,
+                        f"Chunk {chunk_no}/{total_chunks} done: "
+                        f"+{success_count - chunk_success_before} created, "
+                        f"+{failed_count - chunk_failed_before} failed | "
+                        f"progress {processed}/{total} ({processed * 100 // total}%) — "
+                        f"{success_count} ok, {failed_count} failed, {skipped_count} skipped",
+                        "sync_service"
+                    )
+
+            # Final commit of run totals
             run.success_count = success_count
             run.failed_count = failed_count
             run.skipped_count = skipped_count
@@ -812,7 +876,7 @@ class SyncService:
 
                 push_tasks = [push_single_record(*p) for p in planned]
 
-                results = await asyncio.gather(*push_tasks)
+                results = await _gather_bounded(push_tasks)
 
                 # 4. Process and write results serially (safe for SQLAlchemy)
                 for res in results:
@@ -1069,7 +1133,7 @@ class SyncService:
             else:
                 rec["Associated"] = {}
 
-        await asyncio.gather(*[_one(r) for r in records])
+        await _gather_bounded([_one(r) for r in records])
 
     async def _ensure_lookup_table(self, name: str) -> None:
         """Register a named lookup table (bucket) if it isn't already, so other

@@ -25,6 +25,11 @@ services:
       dockerfile: Dockerfile
     container_name: tririga_kontracts_backend
     restart: unless-stopped
+    # Raise the open-file limit; large sync runs open many outbound sockets.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     env_file:
       - .env
     environment:
